@@ -15,7 +15,8 @@
     "SplashOverlayMixin",
     "InGameOverlayRendererMixin",
     "ParticleManagerMixin",
-    "BackgroundFogMixin"
+    "BackgroundFogMixin",
+    "PlayerEntityRendererMixin"
   ],
   "injectors": {
     "defaultRequire": 1

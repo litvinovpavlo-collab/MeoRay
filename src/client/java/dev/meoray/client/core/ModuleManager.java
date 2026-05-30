@@ -4,6 +4,7 @@ import dev.meoray.client.feature.combat.*;
 import dev.meoray.client.feature.movement.*;
 import dev.meoray.client.feature.player.*;
 import dev.meoray.client.feature.render.*;
+import dev.meoray.client.feature.visual.wings.Wings;
 import dev.meoray.client.feature.misc.Interface;
 
 import java.util.ArrayList;
@@ -28,6 +29,7 @@ public class ModuleManager {
         register(new BetterWorld());
         register(new Particles());
         register(new FullBright());
+        register(new Wings());
         register(new Interface());
     }
 
