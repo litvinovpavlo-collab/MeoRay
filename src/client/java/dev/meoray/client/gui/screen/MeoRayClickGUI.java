@@ -137,11 +137,6 @@ public class MeoRayClickGUI extends Screen {
         float gx = (width - W) / 2f;
         float gy = (height - H) / 2f;
 
-        int darkAlpha = Math.min(255, (int) (120 * open));
-        if (darkAlpha > 0) {
-            ctx.fill(0, 0, width, height, darkAlpha << 24);
-        }
-
         ctx.getMatrices().push();
         float scale = 0.82f + 0.18f * open;
         float ms = MeoRayClient.mainScale;
@@ -423,7 +418,7 @@ public class MeoRayClickGUI extends Screen {
                     ModuleAnimState st = moduleAnims.get(mod.getName());
                     if (st != null) {
                         st.knob.update(); st.highlight.update(); st.expand.update();
-                        st.hoverOffset.update(); st.gearAngle.update();
+                        st.gearAngle.update();
                     }
                 }
 
@@ -472,15 +467,15 @@ public class MeoRayClickGUI extends Screen {
 
         float contentH = contentEnd - headerBottom;
         float visibleH = gy + H - 8 - headerBottom;
-        if (contentH > visibleH) {
-            float maxScroll = contentH - visibleH;
-            float excess = contentScroll < 0 ? contentScroll : contentScroll > maxScroll ? contentScroll - maxScroll : 0;
-            if (Math.abs(excess) > 0.5f) {
-                contentScroll -= excess * 0.06f;
-            } else if (Math.abs(excess) > 0.01f) {
-                contentScroll = Math.max(0, Math.min(contentScroll, maxScroll));
-            }
+        float maxScroll = Math.max(0, contentH - visibleH);
+        float excess = contentScroll < 0 ? contentScroll : contentScroll > maxScroll ? contentScroll - maxScroll : 0;
+        if (Math.abs(excess) > 0.5f) {
+            contentScroll -= excess * 0.06f;
+        } else if (Math.abs(excess) > 0.01f) {
+            contentScroll = Math.max(0, Math.min(contentScroll, maxScroll));
+        }
 
+        if (maxScroll > 1) {
             float sbX = cx + cw + 4, sbTrackH = ch - 20;
             float sbThumbH = Math.max(12, sbTrackH * (visibleH / contentH));
             float sbThumbY = headerBottom + (contentScroll / maxScroll) * (sbTrackH - sbThumbH);
@@ -490,8 +485,6 @@ public class MeoRayClickGUI extends Screen {
 
             int thumbCol = alphaBlend(theme.accent(), open, 180);
             ((BuiltRectangle) Builder.rectangle().size(new SizeState(3.0, sbThumbH)).color(new QuadColorState(thumbCol)).radius(new QuadRadiusState(1.5)).smoothness(1.15F).build()).render(matrix, sbX, sbThumbY);
-        } else {
-            contentScroll = 0f;
         }
     }
 
