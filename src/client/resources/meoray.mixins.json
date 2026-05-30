@@ -1,0 +1,23 @@
+{
+  "required": true,
+  "minVersion": "0.8",
+  "package": "dev.meoray.client.mixin",
+  "compatibilityLevel": "JAVA_21",
+  "refmap": "meoray.refmap.json",
+  "client": [
+    "MinecraftClientTitleMixin",
+    "MainMenuMixin",
+    "ScreenBackgroundMixin",
+    "ButtonStyleMixin",
+    "LoadingScreensMixin$LevelLoading",
+    "LoadingScreensMixin$Progress",
+    "LoadingScreensMixin$DownloadingTerrain",
+    "SplashOverlayMixin",
+    "InGameOverlayRendererMixin",
+    "ParticleManagerMixin",
+    "BackgroundFogMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}

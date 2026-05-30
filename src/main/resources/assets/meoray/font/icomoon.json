@@ -1,0 +1,11 @@
+{
+  "providers": [
+    {
+      "type": "ttf",
+      "file": "meoray:icomoon.ttf",
+      "shift": [0, 1],
+      "size": 14.0,
+      "oversample": 6
+    }
+  ]
+}

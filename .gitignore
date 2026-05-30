@@ -1,0 +1,11 @@
+.gradle/
+build/
+out/
+classes/
+run/
+.idea/
+*.iml
+.vscode/
+bin/
+hs_err_*.log
+*.hprof
