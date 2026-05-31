@@ -45,10 +45,6 @@ public class BetterWorld extends Module {
             mc.player.addStatusEffect(new StatusEffectInstance(StatusEffects.NIGHT_VISION, 400, 2));
         }
 
-        if (skyShader.getValue()) {
-            mc.options.getBobView().setValue(false);
-        }
-
         if (weather.getValue()) {
             boolean rain = weatherMode.getValue().equals("Rain") || weatherMode.getValue().equals("Storm");
             boolean thunder = weatherMode.getValue().equals("Storm");

@@ -17,7 +17,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 
-public class KillAura extends Module {
+public class AuraAttack extends Module {
 
     private final NeuroRotation neuro = new NeuroRotation();
     private final MinecraftClient mc = MinecraftClient.getInstance();
@@ -48,8 +48,8 @@ public class KillAura extends Module {
     private Entity target = null;
     private long lastAttackTime = 0;
 
-    public KillAura() {
-        super("KillAura", "Funtime / Spokytime KillAura", Category.COMBAT);
+    public AuraAttack() {
+        super("AuraAttack", "Funtime / Spokytime KillAura", Category.COMBAT);
     }
 
     @Override

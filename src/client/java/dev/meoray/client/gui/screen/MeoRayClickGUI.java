@@ -96,11 +96,14 @@ public class MeoRayClickGUI extends Screen {
 
     private final SearchElement searchElement = new SearchElement();
     private final Map<String, Float> sliderAnimatedProgress = new HashMap<>();
+    private final Map<String, AnimatedFloat> modeDropdownAnims = new HashMap<>();
     private String hoveredSliderKey;
     private String draggingSliderMod;
     private String draggingSliderName;
     private boolean draggingSlider;
     private float contentScroll = 0f;
+    private int pendingThemeIndex = 0;
+    private boolean typeGridExpanded = true;
     private static final Map<String, String> RU_DESCRIPTIONS = Map.ofEntries(
         entry("AutoPotion", "Автоматическое использование зелий"),
         entry("Sprint", "Автоматический спринт"),
@@ -134,24 +137,12 @@ public class MeoRayClickGUI extends Screen {
             return;
         }
 
-        float gx = (width - W) / 2f;
-        float gy = (height - H) / 2f;
-
-        ctx.getMatrices().push();
-        float scale = 0.82f + 0.18f * open;
-        float ms = MeoRayClient.mainScale;
-        scale *= ms;
-        float cx = width / 2f;
-        float cy = height / 2f;
-        ctx.getMatrices().translate(cx * (1 - scale), cy * (1 - scale), 0);
-        ctx.getMatrices().scale(scale, scale, 1);
-
-        float lx = (mx - cx * (1 - scale)) / scale;
-        float ly = (my - cy * (1 - scale)) / scale;
+        int gxi = (width - W) / 2;
+        int gyi = (height - H) / 2;
+        float lx = (mx - gxi) / ((0.82f + 0.18f * open) * MeoRayClient.mainScale) + gxi;
+        float ly = (my - gyi) / ((0.82f + 0.18f * open) * MeoRayClient.mainScale) + gyi;
 
         Matrix4f matrix = ctx.getMatrices().peek().getPositionMatrix();
-        int gxi = (int) gx;
-        int gyi = (int) gy;
 
         Theme theme = MeoRayClient.INSTANCE.getThemeManager().getRenderTheme();
 
@@ -159,11 +150,11 @@ public class MeoRayClickGUI extends Screen {
         renderBackgroundEffects(matrix, gxi, gyi);
         renderSidebar(matrix, gxi, gyi, lx, ly, open, theme);
         renderWindowOutline(matrix, gxi, gyi, open, theme);
-        renderContent(matrix, gxi, gyi, lx, ly, open, theme);
+        renderContent(matrix, gxi, gyi, lx, ly, open, theme, delta);
 
         renderWhiteOutline(matrix, gxi, gyi, open);
 
-        drawTooltip(matrix, gx, gy, lx, ly, open, theme);
+        drawTooltip(matrix, gxi, gyi, lx, ly, open, theme);
 
         ctx.getMatrices().pop();
 
@@ -205,21 +196,24 @@ public class MeoRayClickGUI extends Screen {
     }
 
     private void renderWindowOutline(Matrix4f matrix, int gx, int gy, float open, Theme theme) {
+        int accent = theme.accent() & 0x00FFFFFF;
+        int accentDim = lerpColor(accent, 0xFFFFFF, 0.5f) & 0x00FFFFFF | 0x66000000;
+
         int border = alphaBlend(theme.border(), open, 255);
         ((BuiltBorder) Builder.border()
             .size(new SizeState(W, H))
             .color(new QuadColorState(border))
             .radius(new QuadRadiusState(5.0))
-            .thickness(0.035F)
+            .thickness(0.06F)
             .smoothness(0.65F, 0.65F)
             .build()).render(matrix, gx, gy);
 
-        int accentGlow = alphaBlend(theme.accent(), open, 80);
+        int accentGlow = alphaBlend(accentDim, open, 255);
         ((BuiltBorder) Builder.border()
             .size(new SizeState(W - 2, H - 2))
             .color(new QuadColorState(accentGlow))
             .radius(new QuadRadiusState(4.5))
-            .thickness(0.02F)
+            .thickness(0.04F)
             .smoothness(0.65F, 0.65F)
             .build()).render(matrix, gx + 1, gy + 1);
     }
@@ -347,7 +341,7 @@ public class MeoRayClickGUI extends Screen {
         }
     }
 
-    private void renderContent(Matrix4f matrix, int gx, int gy, float lx, float ly, float open, Theme theme) {
+    private void renderContent(Matrix4f matrix, int gx, int gy, float lx, float ly, float open, Theme theme, float delta) {
         int cx = gx + SIDEBAR + 14;
         int cy = gy + 14;
         int cw = W - SIDEBAR - 28;
@@ -385,16 +379,23 @@ public class MeoRayClickGUI extends Screen {
             .radius(new QuadRadiusState(3.0))
             .smoothness(1.15F)
             .build()).render(matrix, searchX, searchY);
-        int searchBorder = alphaBlend((theme.accent() & 0x00FFFFFF) | 0x44000000, open, 255);
+        float searchGlow = searchElement.getFocusGlow();
+        int searchBorderCol = lerpColor(
+            (theme.border() & 0x00FFFFFF) | 0x44000000,
+            (theme.accent() & 0x00FFFFFF) | 0xBB000000,
+            searchGlow
+        );
+        searchBorderCol = alphaBlend(searchBorderCol, open, 255);
+        float borderThick = 0.015f + 0.025f * searchGlow;
         ((BuiltBorder) Builder.border()
             .size(new SizeState(searchW, searchH))
-            .color(new QuadColorState(searchBorder))
+            .color(new QuadColorState(searchBorderCol))
             .radius(new QuadRadiusState(3.0))
-            .thickness(0.015F)
+            .thickness(borderThick)
             .smoothness(0.65F, 0.65F)
             .build()).render(matrix, searchX, searchY);
         searchElement.setAnimation(open);
-        searchElement.render(matrix, searchX, searchY);
+        searchElement.render(matrix, searchX, searchY, delta);
 
         boolean hasSearch = !searchElement.getValue().isEmpty();
 
@@ -523,14 +524,23 @@ public class MeoRayClickGUI extends Screen {
             .smoothness(1.15F)
             .build()).render(matrix, x, y);
 
-        int black = alphaBlend(0xFF000000, open, 255);
+        int borderCol = alphaBlend(theme.border(), open, 220);
         ((BuiltBorder) Builder.border()
             .size(new SizeState(w, h))
-            .color(new QuadColorState(black))
+            .color(new QuadColorState(borderCol))
             .radius(new QuadRadiusState(4.0))
             .smoothness(0.65F, 0.65F)
-            .thickness(0.04F)
+            .thickness(0.05F)
             .build()).render(matrix, x, y);
+
+        int cardAccent = alphaBlend(theme.accent(), open, 60);
+        ((BuiltBorder) Builder.border()
+            .size(new SizeState(w - 2, h - 2))
+            .color(new QuadColorState(cardAccent))
+            .radius(new QuadRadiusState(3.5))
+            .smoothness(0.65F, 0.65F)
+            .thickness(0.03F)
+            .build()).render(matrix, x + 1, y + 1);
 
         float headerH = 30;
         MsdfFont medium = FontManager.SUISSEINTMEDIUM.get();
@@ -694,6 +704,24 @@ public class MeoRayClickGUI extends Screen {
             .radius(new QuadRadiusState(0.0, 0.0, 4.0, 4.0))
             .smoothness(1.15F)
             .build()).render(matrix, sx, sy);
+
+        int setBorder = alphaBlend(theme.border(), open, 140);
+        ((BuiltBorder) Builder.border()
+            .size(new SizeState(sw, sh))
+            .color(new QuadColorState(setBorder))
+            .radius(new QuadRadiusState(0.0, 0.0, 4.0, 4.0))
+            .smoothness(0.65F, 0.65F)
+            .thickness(0.04F)
+            .build()).render(matrix, sx, sy);
+
+        int setAccent = alphaBlend(theme.accent(), open, 40);
+        ((BuiltBorder) Builder.border()
+            .size(new SizeState(sw - 2, sh - 2))
+            .color(new QuadColorState(setAccent))
+            .radius(new QuadRadiusState(0.0, 0.0, 3.5, 3.5))
+            .smoothness(0.65F, 0.65F)
+            .thickness(0.02F)
+            .build()).render(matrix, sx + 1, sy + 1);
 
         int sepColor = alphaBlend(0x00000000, open, 0);
         int sepAlphaMax = (int)(45 * lockAlpha);
@@ -901,17 +929,31 @@ public class MeoRayClickGUI extends Screen {
 
             } else if (setting instanceof ModeSetting ms) {
                 String current = ms.getValue();
-                float settingH = 14 + 6;
+                String[] modes = ms.getModes();
+                float pillH = 14;
+
+                float maxTextW = medium.getWidth(current, 5.5F);
+                for (String m : modes) {
+                    maxTextW = Math.max(maxTextW, medium.getWidth(m, 5.5F));
+                }
+                float arrowW = medium.getWidth("\u25BC", 5.0F);
+                float modeW = Math.min(maxTextW + 14 + arrowW + 6, settingW);
+                float ddItemH = 13;
+                float ddFullH = modes.length * ddItemH;
+                float settingH = pillH + 6;
+
+                String ddKey = mod.getName() + "|" + name;
+                if (!modeDropdownAnims.containsKey(ddKey)) {
+                    modeDropdownAnims.put(ddKey, new AnimatedFloat(0f));
+                }
+                AnimatedFloat ddAnim = modeDropdownAnims.get(ddKey);
+                float ddProgress = ddAnim.update();
 
                 if (curY + settingH >= sy) {
-                    String modeText = name + ": " + current;
-                    float modeTextW = medium.getWidth(modeText, 5.5F);
-                    float modeW = Math.min(modeTextW + 14, settingW);
-
                     int modeBg = (theme.border() & 0x00FFFFFF) | (int)(0x40 * lockAlpha) << 24;
                     modeBg = alphaBlend(modeBg, open, 255);
                     ((BuiltRectangle) Builder.rectangle()
-                        .size(new SizeState(modeW, 14))
+                        .size(new SizeState(modeW, pillH))
                         .color(new QuadColorState(modeBg))
                         .radius(new QuadRadiusState(3.0))
                         .smoothness(1.15F)
@@ -919,79 +961,211 @@ public class MeoRayClickGUI extends Screen {
 
                     int modeColor = alphaBlend(theme.textPrimary(), open, (int)(220 * lockAlpha));
                     ((BuiltText) Builder.text()
-                        .font(medium).text(modeText)
+                        .font(medium).text(current)
                         .color(modeColor).size(5.5F).thickness(0.04F)
                         .build()).render(matrix, settingX + 5, curY + 2.5f);
+
+                    String arrow = ddProgress > 0.5f ? "\u25B2" : "\u25BC";
+                    int arrCol = alphaBlend(0xFF888896, open, (int)(200 * lockAlpha));
+                    ((BuiltText) Builder.text()
+                        .font(medium).text(arrow)
+                        .color(arrCol).size(5.0F).thickness(0.04F)
+                        .build()).render(matrix, settingX + modeW - arrowW - 5, curY + (pillH - 5.0F) / 2f);
+
+                    float ddH = ddFullH * ddProgress;
+                    if (ddH > 1) {
+                        float ddY = curY + pillH + 2;
+
+                        int ddBg = 0xCC202024;
+                        ddBg = alphaBlend(ddBg, open, 255);
+                        ((BuiltRectangle) Builder.rectangle()
+                            .size(new SizeState(modeW, ddH))
+                            .color(new QuadColorState(ddBg))
+                            .radius(new QuadRadiusState(3.0))
+                            .smoothness(1.15F)
+                            .build()).render(matrix, settingX, ddY);
+
+                        int ddBorder = alphaBlend(0xFF000000, open, 255);
+                        ((BuiltBorder) Builder.border()
+                            .size(new SizeState(modeW, ddH))
+                            .color(new QuadColorState(ddBorder))
+                            .radius(new QuadRadiusState(3.0))
+                            .thickness(0.02F)
+                            .smoothness(0.65F, 0.65F)
+                            .build()).render(matrix, settingX, ddY);
+
+                        for (int mi = 0; mi < modes.length; mi++) {
+                            float itemAlpha = (ddProgress * modes.length - mi) / modes.length * 2f;
+                            itemAlpha = Math.max(0, Math.min(1, itemAlpha * 2f));
+                            if (itemAlpha < 0.01f) continue;
+
+                            float iy = ddY + mi * ddItemH;
+                            if (iy - ddY > ddH) continue;
+
+                            boolean sel = modes[mi].equals(current);
+                            if (sel) {
+                                int itemBg = alphaBlend((theme.accent() & 0x00FFFFFF) | 0x30000000, open, 255);
+                                double tlr = mi == 0 ? 3.0 : 0.0;
+                                double brr = mi == modes.length - 1 ? 3.0 : 0.0;
+                                ((BuiltRectangle) Builder.rectangle()
+                                    .size(new SizeState(modeW, ddItemH))
+                                    .color(new QuadColorState(itemBg))
+                                    .radius(new QuadRadiusState(tlr, 0.0, 0.0, brr))
+                                    .smoothness(1.15F)
+                                    .build()).render(matrix, settingX, iy);
+                            }
+
+                            int itemAlphaI = (int)(255 * itemAlpha);
+                            String check = sel ? "\u2713" : "  ";
+                            float cw = medium.getWidth(check, 5.0F);
+                            int cCol = sel ? (theme.accent() & 0x00FFFFFF) | (itemAlphaI << 24) : 0;
+                            if (sel) {
+                                ((BuiltText) Builder.text()
+                                    .font(medium).text(check)
+                                    .color(cCol).size(5.0F).thickness(0.04F)
+                                    .build()).render(matrix, settingX + 4, iy + (ddItemH - 5.0F) / 2);
+                            }
+
+                            float txOff = sel ? 4 + cw + 4 : 4;
+                            int tCol = alphaBlend(sel ? 0xFFFFFFFF : 0xFF999999, open, (int)(255 * itemAlpha));
+                            ((BuiltText) Builder.text()
+                                .font(medium).text(modes[mi])
+                                .color(tCol).size(5.0F).thickness(0.04F)
+                                .build()).render(matrix, settingX + txOff, iy + (ddItemH - 5.0F) / 2);
+                        }
+                    }
                 }
-                curY += settingH + 2;
+                curY += settingH + 2 + ddProgress * ddFullH;
             }
         }
 
         if (typeSettings != null && !typeSettings.isEmpty()) {
-            int cols = 3;
-            float gridW = settingW;
-            float cellW = gridW / cols;
-            float cellH = 20;
-            float gridStartY = Math.max(curY + 4, sy + 4);
-            float gridH = ((typeSettings.size() + cols - 1) / cols) * cellH + 4;
+            float headerH = 16;
+            float headerX = settingX;
+            float headerY = curY + 2;
 
-            int gridBg = (theme.border() & 0x00FFFFFF) | 0x24000000;
-            gridBg = alphaBlend(gridBg, open, 255);
+            int headerBg = alphaBlend((theme.accent() & 0x00FFFFFF) | 0x18000000, open, 255);
             ((BuiltRectangle) Builder.rectangle()
-                .size(new SizeState(gridW, gridH))
-                .color(new QuadColorState(gridBg))
+                .size(new SizeState(settingW, headerH))
+                .color(new QuadColorState(headerBg))
                 .radius(new QuadRadiusState(4.0))
                 .smoothness(1.15F)
-                .build()).render(matrix, settingX, gridStartY);
+                .build()).render(matrix, headerX, headerY);
 
-            for (int ti = 0; ti < typeSettings.size(); ti++) {
-                BooleanSetting ts = typeSettings.get(ti);
-                int tCol = ti % cols;
-                int tRow = ti / cols;
-                float cellX = settingX + tCol * cellW + 2;
-                float cellY = gridStartY + 2 + tRow * cellH;
-                float cellDrawW = cellW - 4;
-                float cellDrawH = cellH - 2;
+            int headerBorder = alphaBlend(theme.border(), open, 160);
+            ((BuiltBorder) Builder.border()
+                .size(new SizeState(settingW, headerH))
+                .color(new QuadColorState(headerBorder))
+                .radius(new QuadRadiusState(4.0))
+                .thickness(0.03F)
+                .smoothness(0.65F, 0.65F)
+                .build()).render(matrix, headerX, headerY);
 
-                boolean tVal = ts.getValue();
-                String tLabel = ts.getName().substring(5);
+            String arrow = typeGridExpanded ? "\u25BC" : "\u25B6";
+            int arrowCol = alphaBlend(theme.accent(), open, 220);
+            ((BuiltText) Builder.text()
+                .font(medium).text(arrow)
+                .color(arrowCol).size(5.0F).thickness(0.04F)
+                .build()).render(matrix, headerX + 5, headerY + (headerH - 5.0F) / 2f);
 
-                ModuleAnimState mst = moduleAnims.get(mod.getName());
-                String sKey = ts.getName();
-                if (mst != null && !mst.settingAnims.containsKey(sKey)) {
-                    mst.settingAnims.put(sKey, new AnimatedFloat(tVal ? 1f : 0f));
-                }
-                AnimatedFloat sAnim = mst != null ? mst.settingAnims.get(sKey) : null;
-                float animVal = sAnim != null ? sAnim.update() : (tVal ? 1f : 0f);
+            int onCount = 0;
+            for (BooleanSetting ts : typeSettings) {
+                if (ts.getValue()) onCount++;
+            }
+            String headerText = "Particle Types (" + onCount + "/" + typeSettings.size() + ")";
+            int headerTxtCol = alphaBlend(theme.textPrimary(), open, 200);
+            ((BuiltText) Builder.text()
+                .font(medium).text(headerText)
+                .color(headerTxtCol).size(5.0F).thickness(0.04F)
+                .build()).render(matrix, headerX + 18, headerY + (headerH - 5.0F) / 2f);
 
-                int offBg = 0xFF202024;
-                int onBg = (theme.accent() & 0x00FFFFFF) | 0xB4000000;
-                int fillBg = lerpColor(offBg, onBg, animVal);
-                fillBg = alphaBlend(fillBg, open, 255);
+            curY = headerY + headerH + 3;
 
+            if (typeGridExpanded) {
+                int cols = 3;
+                float cellGap = 3;
+                float cellW = (settingW - (cols - 1) * cellGap) / cols;
+                float cellH = 14;
+                float gridStartY = curY;
+                float gridH = ((typeSettings.size() + cols - 1) / cols) * (cellH + cellGap);
+
+                int gridBg = (theme.border() & 0x00FFFFFF) | 0x24000000;
+                gridBg = alphaBlend(gridBg, open, 255);
                 ((BuiltRectangle) Builder.rectangle()
-                    .size(new SizeState(cellDrawW, cellDrawH))
-                    .color(new QuadColorState(fillBg))
-                    .radius(new QuadRadiusState(3.0))
+                    .size(new SizeState(settingW, gridH))
+                    .color(new QuadColorState(gridBg))
+                    .radius(new QuadRadiusState(4.0))
                     .smoothness(1.15F)
-                    .build()).render(matrix, cellX, cellY);
+                    .build()).render(matrix, settingX, gridStartY);
 
-                if (animVal > 0.01f) {
-                    float checkScale = 0.3f + 0.7f * animVal;
-                    float checkSize = 5.5f * checkScale;
-                    int checkColor = alphaBlend(0xFF111111, open, (int)(255 * animVal));
+                for (int ti = 0; ti < typeSettings.size(); ti++) {
+                    BooleanSetting ts = typeSettings.get(ti);
+                    int tCol = ti % cols;
+                    int tRow = ti / cols;
+                    float cellX = settingX + tCol * (cellW + cellGap);
+                    float cellY = gridStartY + 2 + tRow * (cellH + cellGap);
+                    float cellDrawW = cellW;
+                    float cellDrawH = cellH;
+
+                    boolean tVal = ts.getValue();
+                    String tLabel = ts.getName().substring(5);
+
+                    ModuleAnimState mst = moduleAnims.get(mod.getName());
+                    String sKey = ts.getName();
+                    if (mst != null && !mst.settingAnims.containsKey(sKey)) {
+                        mst.settingAnims.put(sKey, new AnimatedFloat(tVal ? 1f : 0f));
+                    }
+                    AnimatedFloat sAnim = mst != null ? mst.settingAnims.get(sKey) : null;
+                    float animVal = sAnim != null ? sAnim.update() : (tVal ? 1f : 0f);
+
+                    int offBg = 0xFF202024;
+                    int onBg = (theme.accent() & 0x00FFFFFF) | 0xB4000000;
+                    int fillBg = lerpColor(offBg, onBg, animVal);
+                    fillBg = alphaBlend(fillBg, open, 255);
+
+                    ((BuiltRectangle) Builder.rectangle()
+                        .size(new SizeState(2, cellDrawH - 4))
+                        .color(new QuadColorState(fillBg))
+                        .radius(new QuadRadiusState(1.0))
+                        .smoothness(1.15F)
+                        .build()).render(matrix, cellX, cellY + 2);
+
+                    int cellBg = alphaBlend(0x2A000000, open, 255);
+                    ((BuiltRectangle) Builder.rectangle()
+                        .size(new SizeState(cellDrawW, cellDrawH))
+                        .color(new QuadColorState(cellBg))
+                        .radius(new QuadRadiusState(3.0))
+                        .smoothness(1.15F)
+                        .build()).render(matrix, cellX + 3, cellY);
+
+                    if (animVal > 0.01f) {
+                        ((BuiltRectangle) Builder.rectangle()
+                            .size(new SizeState(cellDrawW - 3, cellDrawH))
+                            .color(new QuadColorState(fillBg))
+                            .radius(new QuadRadiusState(0.0, 3.0, 3.0, 0.0))
+                            .smoothness(1.15F)
+                            .build()).render(matrix, cellX + 3, cellY);
+                    }
+
+                    if (animVal > 0.3f) {
+                        int checkCol = alphaBlend(0xFF111111, open, (int)(200 * animVal));
+                        ((BuiltText) Builder.text()
+                            .font(medium).text("\u2713")
+                            .color(checkCol).size(4.0F).thickness(0.04F)
+                            .build()).render(matrix, cellX + 5, cellY + (cellDrawH - 4.0F) / 2f);
+                    }
+
+                    int txtCol = alphaBlend(theme.textPrimary(), open, (int)(200 * lockAlpha));
+                    float loX = 8f;
+                    float txtSize = 4.0F;
                     ((BuiltText) Builder.text()
-                        .font(medium).text("\u2713")
-                        .color(checkColor).size(checkSize).thickness(0.04F)
-                        .build()).render(matrix, cellX + 4, cellY + (cellDrawH - checkSize) / 2f);
+                        .font(medium).text(tLabel)
+                        .color(txtCol).size(txtSize).thickness(0.04F)
+                        .build()).render(matrix, cellX + loX, cellY + (cellDrawH - txtSize) / 2f);
                 }
-
-                int txtCol = alphaBlend(theme.textPrimary(), open, (int)(220 * lockAlpha));
-                float labelOffsetX = animVal > 0.01f ? 10f : 4f;
-                ((BuiltText) Builder.text()
-                    .font(medium).text(tLabel)
-                    .color(txtCol).size(5.5F).thickness(0.04F)
-                    .build()).render(matrix, cellX + labelOffsetX, cellY + (cellDrawH - 5.5F) / 2f);
+                curY = gridStartY + gridH + 4;
+            } else {
+                curY += 2;
             }
         }
 
@@ -1001,13 +1175,15 @@ public class MeoRayClickGUI extends Screen {
     private void renderThemesTab(Matrix4f matrix, int ox, int oy, int w, int h, float lx, float ly, float open, float scrollOffset) {
         ThemeManager mgr = MeoRayClient.INSTANCE.getThemeManager();
         Theme[] themes = mgr.getThemes();
-        int selected = mgr.getSelectedIndex();
 
         int cols = 4;
         int gapX = 6;
         int gapY = 8;
         int cardW = (w - (cols - 1) * gapX) / cols;
         int cardH = 52;
+
+        int rows = (themes.length + cols - 1) / cols;
+        int gridTotalH = rows * (cardH + gapY);
 
         for (int i = 0; i < themes.length; i++) {
             int col = i % cols;
@@ -1017,136 +1193,94 @@ public class MeoRayClickGUI extends Screen {
 
             boolean hover = (int) lx >= cx && (int) lx <= cx + cardW
                 && (int) ly >= cy && (int) ly <= cy + cardH;
-            boolean sel = i == selected;
+            boolean sel = i == pendingThemeIndex;
 
             drawThemeCard(matrix, cx, cy, cardW, cardH, themes[i], sel, hover, open);
         }
+
+        float btnY = oy + gridTotalH + 10 - scrollOffset;
+        float btnW = 80;
+        float btnH = 18;
+        float btnX = ox + w / 2f - btnW / 2f;
+        boolean btnHover = lx >= btnX && lx <= btnX + btnW && ly >= btnY && ly <= btnY + btnH;
+
+        int btnBg = btnHover
+            ? alphaBlend(MeoRayClient.INSTANCE.getThemeManager().getCurrentTheme().accent(), open, 200)
+            : alphaBlend(0x2A2A3A, open, 200);
+        if (pendingThemeIndex == mgr.getSelectedIndex()) {
+            btnBg = alphaBlend(0x3A3A22, open, 200);
+        }
+        ((BuiltRectangle) Builder.rectangle()
+            .size(new SizeState(btnW, btnH))
+            .color(new QuadColorState(btnBg))
+            .radius(new QuadRadiusState(4.0))
+            .smoothness(1.15F)
+            .build()).render(matrix, btnX, btnY);
+
+        String btnText = pendingThemeIndex == mgr.getSelectedIndex() ? "\u2713 Applied" : "Apply";
+        if (btnHover) btnText = "> " + btnText + " <";
+        int btnTxtCol = alphaBlend(0xFFDDDDDD, open, 255);
+        ((BuiltText) Builder.text()
+            .font(FontManager.SUISSEINTMEDIUM.get()).text(btnText)
+            .color(btnTxtCol).size(5.5F).thickness(0.04F)
+            .build()).render(matrix, btnX + btnW / 2f - FontManager.SUISSEINTMEDIUM.get().getWidth(btnText, 5.5F) / 2f, btnY + (btnH - 5.5F) / 2f);
     }
 
     private void drawThemeCard(Matrix4f matrix, int x, int y, int w, int h, Theme theme, boolean selected, boolean hover, float open) {
         int bg = alphaBlend(0x640F0F14, open, 255);
-        if (hover) {
-            int hoverBg = (theme.accent() & 0x00FFFFFF) | 0x22000000;
-            bg = alphaBlend(hoverBg, open, 255);
+        if (hover || selected) {
+            int hl = (theme.accent() & 0x00FFFFFF) | 0x22000000;
+            bg = alphaBlend(hl, open, 255);
         }
-
         ((BuiltRectangle) Builder.rectangle()
             .size(new SizeState(w, h))
             .color(new QuadColorState(bg))
-            .radius(new QuadRadiusState(4.0))
+            .radius(new QuadRadiusState(5.0))
             .smoothness(1.15F)
             .build()).render(matrix, x, y);
 
-        int cardBorder = selected
-            ? alphaBlend(theme.accent(), open, 200)
-            : alphaBlend(theme.border(), open, 160);
+        int borderCol = selected
+            ? alphaBlend(theme.accent(), open, 220)
+            : alphaBlend(theme.border(), open, 180);
         ((BuiltBorder) Builder.border()
             .size(new SizeState(w, h))
-            .color(new QuadColorState(cardBorder))
-            .radius(new QuadRadiusState(4.0))
-            .thickness(0.02F)
+            .color(new QuadColorState(borderCol))
+            .radius(new QuadRadiusState(5.0))
+            .thickness(selected ? 0.025F : 0.015F)
             .smoothness(0.65F, 0.65F)
             .build()).render(matrix, x, y);
 
-        int previewH = 28;
-        int previewY = y + 4;
-        int previewX = x + 4;
-        int previewW = w - 8;
-
-        int previewBg = alphaBlend((theme.bgMain() & 0x00FFFFFF) | 0xCC000000, open, 255);
+        float barH = 20;
+        int barCol = alphaBlend(theme.accent(), open, 255);
         ((BuiltRectangle) Builder.rectangle()
-            .size(new SizeState(previewW, previewH))
-            .color(new QuadColorState(previewBg))
+            .size(new SizeState(w - 10, barH))
+            .color(new QuadColorState(barCol))
             .radius(new QuadRadiusState(3.0))
             .smoothness(1.15F)
-            .build()).render(matrix, previewX, previewY);
-
-        int accentLine = alphaBlend(theme.accent(), open, 255);
-        ((BuiltRectangle) Builder.rectangle()
-            .size(new SizeState(3, previewH - 6))
-            .color(new QuadColorState(accentLine))
-            .radius(new QuadRadiusState(1.0))
-            .smoothness(1.15F)
-            .build()).render(matrix, previewX + 4, previewY + 3);
-
-        int barY = previewY + 6;
-        int barX = previewX + 11;
-        int barH = 3;
-        int barGap = 4;
-
-        int textPrimaryColor = alphaBlend(theme.textPrimary(), open, 200);
-        ((BuiltRectangle) Builder.rectangle()
-            .size(new SizeState(previewW - 18, barH))
-            .color(new QuadColorState(textPrimaryColor))
-            .radius(new QuadRadiusState(1.0))
-            .smoothness(1.15F)
-            .build()).render(matrix, barX, barY);
-
-        int textSecondaryColor = alphaBlend(theme.textSecondary(), open, 160);
-        ((BuiltRectangle) Builder.rectangle()
-            .size(new SizeState(previewW - 24, barH))
-            .color(new QuadColorState(textSecondaryColor))
-            .radius(new QuadRadiusState(1.0))
-            .smoothness(1.15F)
-            .build()).render(matrix, barX, barY + barH + barGap);
-
-        int accentBarColor = alphaBlend(theme.accent(), open, 255);
-        float accentBarW = (previewW - 18) * 0.55f;
-        ((BuiltRectangle) Builder.rectangle()
-            .size(new SizeState(accentBarW, barH))
-            .color(new QuadColorState(accentBarColor))
-            .radius(new QuadRadiusState(1.0))
-            .smoothness(1.15F)
-            .build()).render(matrix, barX, barY + (barH + barGap) * 2);
-
-        int toggleBgColor = alphaBlend(theme.border(), open, 120);
-        float toggleW = 12;
-        float toggleH = 5;
-        float toggleX = previewX + previewW - toggleW - 4;
-        float toggleY = previewY + (previewH - toggleH) / 2f;
-        ((BuiltRectangle) Builder.rectangle()
-            .size(new SizeState(toggleW, toggleH))
-            .color(new QuadColorState(toggleBgColor))
-            .radius(new QuadRadiusState(toggleH / 2f))
-            .smoothness(1.15F)
-            .build()).render(matrix, toggleX, toggleY);
-
-        int knobColor = alphaBlend(theme.accent(), open, 200);
-        float knobMiniR = 3;
-        ((BuiltRectangle) Builder.rectangle()
-            .size(new SizeState(knobMiniR * 2, knobMiniR * 2))
-            .color(new QuadColorState(knobColor))
-            .radius(new QuadRadiusState(knobMiniR))
-            .smoothness(1.15F)
-            .build()).render(matrix, toggleX + toggleW - knobMiniR * 2, toggleY + (toggleH - knobMiniR * 2) / 2f);
+            .build()).render(matrix, x + 5, y + 5);
 
         MsdfFont medium = FontManager.SUISSEINTMEDIUM.get();
-        int textColor = alphaBlend(0xFFCCCCCC, open, 255);
+        int nameColor = alphaBlend(0xFFCCCCCC, open, 255);
         ((BuiltText) Builder.text()
             .font(medium).text(theme.name())
-            .color(textColor).size(5.5F).thickness(0.05F)
-            .build()).render(matrix, x + 5, previewY + previewH + 5);
-
-        int rbSize = 7;
-        int rbX = x + w - rbSize - 5;
-        int rbY = y + 5;
-        int rbColor = selected
-            ? alphaBlend(theme.accent(), open, 255)
-            : alphaBlend(0x664A6A8A, open, 200);
-
-        ((BuiltRectangle) Builder.rectangle()
-            .size(new SizeState(rbSize, rbSize))
-            .color(new QuadColorState(rbColor))
-            .radius(new QuadRadiusState(rbSize / 2f))
-            .smoothness(1.15F)
-            .build()).render(matrix, rbX, rbY);
+            .color(nameColor).size(5.0F).thickness(0.05F)
+            .build()).render(matrix, x + 5, y + 5 + barH + 4);
 
         if (selected) {
-            int checkColor = alphaBlend(0xFFFFFFFF, open, 255);
+            float chkSize = 7;
+            float chkX = x + w - chkSize - 7;
+            float chkY = y + 5;
+            int chkBg = alphaBlend(theme.accent(), open, 255);
+            ((BuiltRectangle) Builder.rectangle()
+                .size(new SizeState(chkSize + 2, chkSize + 2))
+                .color(new QuadColorState(chkBg))
+                .radius(new QuadRadiusState(3.0))
+                .smoothness(1.15F)
+                .build()).render(matrix, chkX - 1, chkY - 1);
             ((BuiltText) Builder.text()
                 .font(medium).text("\u2713")
-                .color(checkColor).size(5.0F).thickness(0.04F)
-                .build()).render(matrix, rbX + 1.5f, rbY - 0.5f);
+                .color(alphaBlend(0xFF111111, open, 255)).size(5.0F).thickness(0.04F)
+                .build()).render(matrix, chkX + 1, chkY);
         }
     }
 
@@ -1281,9 +1415,6 @@ public class MeoRayClickGUI extends Screen {
         float target = nowOn ? 1f : 0f;
         state.knob.animate(target, TOGGLE_DURATION, Easing.EASE_OUT_CUBIC);
         state.highlight.animate(target, TOGGLE_DURATION, Easing.EASE_OUT_CUBIC);
-        for (AnimatedFloat af : state.settingAnims.values()) {
-            af.animate(target, TOGGLE_DURATION, Easing.EASE_OUT_CUBIC);
-        }
     }
 
     private void startExpandAnim(Module mod, boolean expand) {
@@ -1618,47 +1749,96 @@ public class MeoRayClickGUI extends Screen {
                 curY += 22 + 2;
 
             } else if (setting instanceof ModeSetting ms) {
-                String modeText = ms.getName() + ": " + ms.getValue();
-                float modeW = Math.min(FontManager.SUISSEINTMEDIUM.get().getWidth(modeText, 5.5F) + 14, settingW);
-                if (ly >= curY && ly <= curY + 14 && lx >= sx && lx <= sx + modeW) {
-                    ms.cycle();
+                String mCurrent = ms.getValue();
+                String[] mModeNames = ms.getModes();
+
+                float maxTextW = FontManager.SUISSEINTMEDIUM.get().getWidth(mCurrent, 5.5F);
+                for (String mName : mModeNames) {
+                    maxTextW = Math.max(maxTextW, FontManager.SUISSEINTMEDIUM.get().getWidth(mName, 5.5F));
+                }
+                float mArrowW = FontManager.SUISSEINTMEDIUM.get().getWidth("\u25BC", 5.0F);
+                float mModeW = Math.min(maxTextW + 14 + mArrowW + 6, settingW);
+                float mPillH = 14;
+                float mDdItemH = 13;
+                float mDdFullH = mModeNames.length * mDdItemH;
+
+                String mDdKey = mod.getName() + "|" + ms.getName();
+                AnimatedFloat mDdAnim = modeDropdownAnims.get(mDdKey);
+                float mDdProgress = mDdAnim != null ? mDdAnim.getValue() : 0f;
+
+                if (ly >= curY && ly <= curY + mPillH && lx >= sx && lx <= sx + mModeW) {
+                    float target = mDdProgress > 0.5f ? 0f : 1f;
+                    if (mDdAnim == null) {
+                        AnimatedFloat newAnim = new AnimatedFloat(target);
+                        modeDropdownAnims.put(mDdKey, newAnim);
+                        newAnim.animate(target, 200L, Easing.EASE_OUT_CUBIC);
+                    } else {
+                        mDdAnim.snapTo(mDdProgress > 0.5f ? 1f : 0f);
+                        mDdAnim.animate(target, 200L, Easing.EASE_OUT_CUBIC);
+                    }
                     return true;
                 }
-                curY += 20 + 2;
+
+                float mDdY = curY + mPillH + 2;
+                if (mDdProgress > 0.1f) {
+                    for (int mi = 0; mi < mModeNames.length; mi++) {
+                        float miy = mDdY + mi * mDdItemH;
+                        if (ly >= miy && ly <= miy + mDdItemH && lx >= sx && lx <= sx + mModeW) {
+                            ms.setValue(mModeNames[mi]);
+                            if (mDdAnim != null) {
+                                mDdAnim.snapTo(mDdProgress);
+                                mDdAnim.animate(0f, 200L, Easing.EASE_OUT_CUBIC);
+                            }
+                            return true;
+                        }
+                    }
+                }
+
+                curY += 20 + 2 + mDdProgress * mDdFullH;
             }
         }
 
         if (typeSettings != null && !typeSettings.isEmpty()) {
-            int cols = 3;
-            float cellW = settingW / cols;
-            float cellH = 20;
-            float gridStartY = Math.max(curY + 4, sy + 4);
-            for (int ti = 0; ti < typeSettings.size(); ti++) {
-                int tCol = ti % cols;
-                int tRow = ti / cols;
-                float cellX = sx + tCol * cellW + 2;
-                float cellY = gridStartY + 2 + tRow * cellH;
-                float cellDrawW = cellW - 4;
-                float cellDrawH = cellH - 2;
-                if (lx >= cellX && lx <= cellX + cellDrawW && ly >= cellY && ly <= cellY + cellDrawH) {
-                    BooleanSetting ts = typeSettings.get(ti);
-                    boolean oldVal = ts.getValue();
-                    ts.toggle();
-                    boolean newVal = !oldVal;
-                    ModuleAnimState mst = moduleAnims.get(mod.getName());
-                    if (mst != null) {
-                        AnimatedFloat sa = mst.settingAnims.get(ts.getName());
-                        if (sa == null) {
-                            sa = new AnimatedFloat(oldVal ? 1f : 0f);
-                            mst.settingAnims.put(ts.getName(), sa);
-                        } else {
-                            sa.snapTo(oldVal ? 1f : 0f);
+            float headerH = 16;
+            float headerY = curY + 2;
+            if (lx >= sx && lx <= sx + settingW && ly >= headerY && ly <= headerY + headerH) {
+                typeGridExpanded = !typeGridExpanded;
+                return true;
+            }
+            curY = headerY + headerH + 3;
+
+            if (typeGridExpanded) {
+                int cols = 3;
+                float cellGap = 3;
+                float cellW = (settingW - (cols - 1) * cellGap) / cols;
+                float cellH = 14;
+                float gridStartY = curY;
+                for (int ti = 0; ti < typeSettings.size(); ti++) {
+                    int tCol = ti % cols;
+                    int tRow = ti / cols;
+                    float cellX = sx + tCol * (cellW + cellGap);
+                    float cellY = gridStartY + 2 + tRow * (cellH + cellGap);
+                    if (lx >= cellX + 3 && lx <= cellX + 3 + cellW && ly >= cellY && ly <= cellY + cellH) {
+                        BooleanSetting ts = typeSettings.get(ti);
+                        boolean oldVal = ts.getValue();
+                        ts.toggle();
+                        boolean newVal = !oldVal;
+                        ModuleAnimState mst = moduleAnims.get(mod.getName());
+                        if (mst != null) {
+                            AnimatedFloat sa = mst.settingAnims.get(ts.getName());
+                            if (sa == null) {
+                                sa = new AnimatedFloat(oldVal ? 1f : 0f);
+                                mst.settingAnims.put(ts.getName(), sa);
+                            } else {
+                                sa.snapTo(oldVal ? 1f : 0f);
+                            }
+                            sa.animate(newVal ? 1f : 0f, 200, Easing.EASE_OUT_CUBIC);
                         }
-                        sa.animate(newVal ? 1f : 0f, 200, Easing.EASE_OUT_CUBIC);
+                        return true;
                     }
-                    return true;
                 }
             }
+            curY += 2;
         }
 
         return false;
@@ -1784,12 +1964,13 @@ public class MeoRayClickGUI extends Screen {
 
         int cols = 4;
         int gapX = 6;
-        int gapY = 6;
+        int gapY = 8;
         int cardW = (w - (cols - 1) * gapX) / cols;
-        int cardH = 48;
+        int cardH = 52;
 
         ThemeManager mgr = MeoRayClient.INSTANCE.getThemeManager();
         Theme[] themes = mgr.getThemes();
+
         for (int i = 0; i < themes.length; i++) {
             int col = i % cols;
             int row = i / cols;
@@ -1798,9 +1979,21 @@ public class MeoRayClickGUI extends Screen {
 
             if ((int) lx >= cx && (int) lx <= cx + cardW
                 && (int) ly >= cy && (int) ly <= cy + cardH) {
-                MeoRayClient.INSTANCE.getThemeManager().select(i);
+                pendingThemeIndex = i;
                 return true;
             }
+        }
+
+        int rows = (themes.length + cols - 1) / cols;
+        float btnY = oy + rows * (cardH + gapY) + 10 - contentScroll;
+        float btnW = 80;
+        float btnH = 18;
+        float btnX = ox + w / 2f - btnW / 2f;
+        if (lx >= btnX && lx <= btnX + btnW && ly >= btnY && ly <= btnY + btnH) {
+            if (pendingThemeIndex != mgr.getSelectedIndex()) {
+                MeoRayClient.INSTANCE.getThemeManager().select(pendingThemeIndex);
+            }
+            return true;
         }
 
         return false;

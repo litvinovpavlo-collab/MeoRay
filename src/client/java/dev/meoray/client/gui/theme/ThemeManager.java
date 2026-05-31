@@ -11,10 +11,10 @@ public class ThemeManager {
     private int selectedIndex = 0;
     private final Map<String, ThemeSettings> settingsMap = new HashMap<>();
     private final Theme[] themes = {
-        new Theme("Dark Carbon",
-            0xFF0C0C0E, 0xFF121216, 0xFFDCDCE1,
-            0xFF18181C, 0xFFE8E8ED, 0xFF888896, 0xFF32323E,
-            0xFF0C0C0E, 0xFF0A0A0C),
+        new Theme("Dark Grey",
+            0xFF1A1A1A, 0xFF222222, 0xFF6C63FF,
+            0x33252525, 0xFFF0F0F0, 0xFFAAAAAA, 0xFF333333,
+            0xFF2A2A2A, 0xFF121212),
         new Theme("Amethyst",
             0xFF1A1028, 0xFF221838, 0xFFFF6FD8,
             0xFF2A1F3A, 0xFFE8DFF0, 0xFF9980B0, 0xFF3A2850,
@@ -58,11 +58,7 @@ public class ThemeManager {
         new Theme("Black Gold",
             0xFF050505, 0xFF0A0A0A, 0xFFD4AF37,
             0x33101010, 0xFFE8E0CC, 0xFFAA9E80, 0xFF1A1A1A,
-            0xFF1A1408, 0xFF050505),
-        new Theme("DarkGrey",
-            0xFF1A1A1A, 0xFF222222, 0xFF6C63FF,
-            0x33252525, 0xFFF0F0F0, 0xFFAAAAAA, 0xFF333333,
-            0xFF2A2A2A, 0xFF121212)
+            0xFF1A1408, 0xFF050505)
     };
 
     private final AnimatedFloat transition = new AnimatedFloat(1f);

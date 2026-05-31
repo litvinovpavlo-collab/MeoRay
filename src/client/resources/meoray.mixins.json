@@ -17,7 +17,13 @@
     "ParticleManagerMixin",
     "BackgroundFogMixin",
     "PlayerAttackMixin",
-    "PlayerEntityRendererMixin"
+    "PlayerEntityRendererMixin",
+    "SkyRenderingMixin",
+    "WorldRendererReloadMixin",
+    "MinecraftClientMixin",
+    "LivingEntityRendererMixin",
+    "EntityRendererMixin",
+    "WorldRendererMixin"
   ],
   "injectors": {
     "defaultRequire": 1

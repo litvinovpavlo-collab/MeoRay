@@ -15,7 +15,7 @@ public class ModuleManager {
     private final List<Module> modules = new ArrayList<>();
 
     public void init() {
-        register(new KillAura());
+        register(new AuraAttack());
         register(new Velocity());
         register(new AutoPotion());
         register(new Flight());

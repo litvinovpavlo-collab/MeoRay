@@ -85,6 +85,7 @@ public class Particles extends Module {
     private int enabledTypeCount;
     private double eyeX, eyeY, eyeZ;
     private boolean moveDown;
+    private long lastSkySpawnMs;
 
     public Particles() {
         super("Particles", "Adds ambient particles to the world", Category.RENDER);
@@ -136,16 +137,14 @@ public class Particles extends Module {
             spawnSkyParticle();
         }
 
-        if (moveCount < MAX_MOVE && triggerMove.getValue()) {
-            var vel = mc.player.getVelocity();
-            if (vel.x != 0 || vel.z != 0) {
-                if (particles.size() < MAX_TOTAL) {
-                    double sx = mc.player.getX() + 0.25 - random.nextDouble() * 0.5;
-                    double sy = mc.player.getY() + 0.75 + random.nextDouble() * 0.75;
-                    double sz = mc.player.getZ() + 0.25 - random.nextDouble() * 0.5;
-                    addParticle(new MoveParticle(sx, sy, sz, nextTex(),
-                            frameTimeMs != 0L ? frameTimeMs : System.currentTimeMillis(), tickCounter + 1));
-                }
+        if (moveCount < MAX_MOVE && triggerMove.getValue() && particles.size() < MAX_TOTAL) {
+            var mov = mc.player.getMovement();
+            if (mov.x != 0 && mov.y != 0 && mov.z != 0) {
+                double sx = mc.player.getX() + 0.25 - random.nextDouble() * 0.5;
+                double sy = mc.player.getY() + 0.75 + random.nextDouble() * 0.75;
+                double sz = mc.player.getZ() + 0.25 - random.nextDouble() * 0.5;
+                addParticle(new MoveParticle(sx, sy, sz, nextTex(),
+                        frameTimeMs != 0L ? frameTimeMs : System.currentTimeMillis(), tickCounter + 1));
             }
         }
     }
@@ -283,17 +282,17 @@ public class Particles extends Module {
     }
 
     private void spawnSkyParticle() {
-        var mc = MinecraftClient.getInstance();
-        long now = System.currentTimeMillis();
+        long ms = System.currentTimeMillis();
+        if (ms - lastSkySpawnMs < 5) return;
         if (particles.size() >= MAX_TOTAL) return;
-        double px = mc.player.getX();
-        double py = mc.player.getY();
-        double pz = mc.player.getZ();
+        var mc = MinecraftClient.getInstance();
+        double px = mc.player.getX(), py = mc.player.getY(), pz = mc.player.getZ();
         double sx = px + 30.0 - random.nextInt(60);
         double sy = moveDown ? py + 10.0 + random.nextInt(25) : py + 1.0 + random.nextInt(10);
         double sz = pz + 30.0 - random.nextInt(60);
         if (canBeSeen(sx, sy, sz)) {
             addParticle(new SkyParticle(sx, sy, sz, nextTex(), tickCounter + random.nextInt(4)));
+            lastSkySpawnMs = ms;
         }
     }
 
