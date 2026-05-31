@@ -213,15 +213,24 @@ public class MeoRayClickGUI extends Screen {
             .thickness(0.035F)
             .smoothness(0.65F, 0.65F)
             .build()).render(matrix, gx, gy);
+
+        int accentGlow = alphaBlend(theme.accent(), open, 80);
+        ((BuiltBorder) Builder.border()
+            .size(new SizeState(W - 2, H - 2))
+            .color(new QuadColorState(accentGlow))
+            .radius(new QuadRadiusState(4.5))
+            .thickness(0.02F)
+            .smoothness(0.65F, 0.65F)
+            .build()).render(matrix, gx + 1, gy + 1);
     }
 
     private void renderWhiteOutline(Matrix4f matrix, int gx, int gy, float open) {
-        int white = alphaBlend(0xFFFFFFFF, open, 255);
+        int white = alphaBlend(0xFFFFFFFF, open, 200);
         ((BuiltBorder) Builder.border()
             .size(new SizeState(W, H))
             .color(new QuadColorState(white))
             .radius(new QuadRadiusState(5.0))
-            .thickness(0.06F)
+            .thickness(0.05F)
             .smoothness(0.65F, 0.65F)
             .build()).render(matrix, gx, gy);
     }
@@ -231,7 +240,7 @@ public class MeoRayClickGUI extends Screen {
         ((BuiltRectangle) Builder.rectangle()
             .size(new SizeState(SIDEBAR, H))
             .color(new QuadColorState(bgSidebar))
-            .radius(new QuadRadiusState(5.0, 0.0, 0.0, 5.0))
+            .radius(new QuadRadiusState(5.0, 0.0, 0.0, 0.0))
             .smoothness(1.15F)
             .build()).render(matrix, gx, gy);
 
@@ -514,40 +523,13 @@ public class MeoRayClickGUI extends Screen {
             .smoothness(1.15F)
             .build()).render(matrix, x, y);
 
-        int shadowColor = (theme.bgMain() & 0x00FFFFFF) | 0x28000000;
-        shadowColor = alphaBlend(shadowColor, open, 255);
-        ((BuiltRectangle) Builder.rectangle()
-            .size(new SizeState(w - 2, 1.0))
-            .color(new QuadColorState(shadowColor))
-            .radius(new QuadRadiusState(0.0))
-            .smoothness(1.15F)
-            .build()).render(matrix, x + 1, y + 1);
-        ((BuiltRectangle) Builder.rectangle()
-            .size(new SizeState(w - 2, 1.0))
-            .color(new QuadColorState(shadowColor))
-            .radius(new QuadRadiusState(0.0))
-            .smoothness(1.15F)
-            .build()).render(matrix, x + 1, y + h - 1);
-        ((BuiltRectangle) Builder.rectangle()
-            .size(new SizeState(1.0, h - 2))
-            .color(new QuadColorState(shadowColor))
-            .radius(new QuadRadiusState(0.0))
-            .smoothness(1.15F)
-            .build()).render(matrix, x + 1, y + 1);
-        ((BuiltRectangle) Builder.rectangle()
-            .size(new SizeState(1.0, h - 2))
-            .color(new QuadColorState(shadowColor))
-            .radius(new QuadRadiusState(0.0))
-            .smoothness(1.15F)
-            .build()).render(matrix, x + w - 1, y + 1);
-
         int black = alphaBlend(0xFF000000, open, 255);
         ((BuiltBorder) Builder.border()
             .size(new SizeState(w, h))
             .color(new QuadColorState(black))
             .radius(new QuadRadiusState(4.0))
             .smoothness(0.65F, 0.65F)
-            .thickness(0.035F)
+            .thickness(0.04F)
             .build()).render(matrix, x, y);
 
         float headerH = 30;
@@ -625,25 +607,23 @@ public class MeoRayClickGUI extends Screen {
             renderSettingsContent(matrix, x, y + headerH, w, h - headerH, mod, expand, open, theme, lx, ly);
         }
 
-        float borderHighlight = Math.max(highlight, hover ? 1f : 0f);
-        int borderColor = lerpColor(theme.border(), theme.accent(), borderHighlight);
-        int cardBorder = alphaBlend(borderColor, open, hover ? 255 : 200);
+        int accentHighlight = (theme.accent() & 0x00FFFFFF) | ((int)(0xB0 * Math.max(highlight, hover ? 1f : 0)) << 24);
+        int accentBorder = alphaBlend(accentHighlight, open, 255);
         ((BuiltBorder) Builder.border()
             .size(new SizeState(w, h))
-            .color(new QuadColorState(cardBorder))
+            .color(new QuadColorState(accentBorder))
             .radius(new QuadRadiusState(4.0))
-            .thickness(0.035F)
+            .thickness(0.025F)
             .smoothness(0.65F, 0.65F)
             .build()).render(matrix, x, y);
 
-        int blackOut = alphaBlend(0xFF000000, open, 255);
-        ((BuiltBorder) Builder.border()
-            .size(new SizeState(w, h))
-            .color(new QuadColorState(blackOut))
-            .radius(new QuadRadiusState(4.0))
-            .thickness(0.035F)
-            .smoothness(0.65F, 0.65F)
-            .build()).render(matrix, x, y);
+        int accentTop = alphaBlend(theme.accent(), open, (int)(0x55 * Math.max(highlight, hover ? 1f : 0)));
+        ((BuiltRectangle) Builder.rectangle()
+            .size(new SizeState(w - 2, 1.5F))
+            .color(new QuadColorState(accentTop))
+            .radius(new QuadRadiusState(1.0))
+            .smoothness(1.15F)
+            .build()).render(matrix, x + 1, y + 1);
     }
 
     private void enableCardScissor(float x, float y, float w, float h) {
@@ -713,15 +693,6 @@ public class MeoRayClickGUI extends Screen {
             .color(new QuadColorState(settingsBg))
             .radius(new QuadRadiusState(0.0, 0.0, 4.0, 4.0))
             .smoothness(1.15F)
-            .build()).render(matrix, sx, sy);
-
-        int black = alphaBlend(0xFF000000, open, 255);
-        ((BuiltBorder) Builder.border()
-            .size(new SizeState(sw, sh))
-            .color(new QuadColorState(black))
-            .radius(new QuadRadiusState(0.0, 0.0, 4.0, 4.0))
-            .smoothness(0.65F, 0.65F)
-            .thickness(0.035F)
             .build()).render(matrix, sx, sy);
 
         int sepColor = alphaBlend(0x00000000, open, 0);

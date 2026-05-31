@@ -1,15 +1,17 @@
 package dev.meoray.client.feature.render;
 
-import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.platform.GlStateManager;
+import com.mojang.blaze3d.systems.RenderSystem;
 import dev.meoray.client.MeoRayClient;
 import dev.meoray.client.core.Category;
 import dev.meoray.client.core.Module;
 import dev.meoray.client.core.setting.BooleanSetting;
 import dev.meoray.client.core.setting.ModeSetting;
+import dev.meoray.client.util.animations.Animation;
+import dev.meoray.client.util.animations.Direction;
+import dev.meoray.client.util.animations.impl.EaseBackIn;
 import net.fabricmc.fabric.api.client.rendering.v1.WorldRenderContext;
 import net.fabricmc.fabric.api.client.rendering.v1.WorldRenderEvents;
-import net.fabricmc.fabric.api.event.player.AttackEntityCallback;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gl.ShaderProgramKeys;
 import net.minecraft.client.option.Perspective;
@@ -20,7 +22,7 @@ import net.minecraft.client.render.Tessellator;
 import net.minecraft.client.render.VertexFormat;
 import net.minecraft.client.render.VertexFormats;
 import net.minecraft.entity.Entity;
-import net.minecraft.util.ActionResult;
+import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.util.Identifier;
 import net.minecraft.util.hit.HitResult;
 import net.minecraft.util.math.Vec3d;
@@ -36,15 +38,10 @@ import java.util.Random;
 public class Particles extends Module {
 
     private static final int TYPE_COUNT = 9;
-    private static final float FADE_IN_SPEED = 3f;
-    private static final float FADE_OUT_SPEED = 1.5f;
     private static final int MAX_SKY = 100;
     private static final int MAX_MOVE = 64;
     private static final int MAX_HIT = 96;
     private static final int MAX_TOTAL = 260;
-    private static final long SKY_SPAWN_INTERVAL = 5L;
-    private static final long MOVE_LIFETIME = 500L;
-    private static final long HIT_LIFETIME = 5000L;
     private static final int VISIBILITY_RECHECK = 4;
     private static final double LOG_035 = Math.log(0.35);
     private static final byte KIND_SKY = 0;
@@ -52,6 +49,7 @@ public class Particles extends Module {
     private static final byte KIND_HIT = 2;
 
     private static final Identifier[] PARTICLE_TEX = new Identifier[TYPE_COUNT];
+
     static {
         for (int i = 0; i < TYPE_COUNT; i++) {
             PARTICLE_TEX[i] = Identifier.of("meoray", "images/particles/type" + (i + 1) + ".png");
@@ -85,7 +83,6 @@ public class Particles extends Module {
     private int tickCounter;
     private int skyCount, moveCount, hitCount;
     private int enabledTypeCount;
-    private long lastSkySpawn;
     private double eyeX, eyeY, eyeZ;
     private boolean moveDown;
 
@@ -95,16 +92,18 @@ public class Particles extends Module {
             batches[i] = new ArrayList<>(48);
         }
         WorldRenderEvents.AFTER_ENTITIES.register(this::onWorldRender);
-        AttackEntityCallback.EVENT.register((player, world, hand, entity, hitResult) -> {
-            if (isEnabled() && triggerAttack.getValue() && entity != null) {
-                if (particles.size() < MAX_TOTAL && hitCount < MAX_HIT) {
-                    spawnHitParticle(entity);
-                    spawnHitParticle(entity);
-                    spawnHitParticle(entity);
-                }
+    }
+
+    public static void onPlayerAttack(PlayerEntity player, Entity target) {
+        if (!player.getWorld().isClient) return;
+        Module mod = MeoRayClient.INSTANCE.moduleManager.getByName("Particles");
+        if (mod instanceof Particles p && p.isEnabled() && p.triggerAttack.getValue()) {
+            if (p.particles.size() < MAX_TOTAL && p.hitCount < MAX_HIT) {
+                p.spawnHitParticle(target);
+                p.spawnHitParticle(target);
+                p.spawnHitParticle(target);
             }
-            return ActionResult.PASS;
-        });
+        }
     }
 
     @Override
@@ -131,23 +130,10 @@ public class Particles extends Module {
         eyeZ = mc.player.getZ();
 
         rebuildEnabledTypes();
+        updateParticleVisibility();
 
         if (skyCount < MAX_SKY && triggerSky.getValue()) {
-            long now = System.currentTimeMillis();
-            if (now - lastSkySpawn >= SKY_SPAWN_INTERVAL) {
-                if (particles.size() < MAX_TOTAL) {
-                    double px = mc.player.getX();
-                    double py = mc.player.getY();
-                    double pz = mc.player.getZ();
-                    double sx = px + 30.0 - random.nextInt(60);
-                    double sy = moveDown ? py + 10.0 + random.nextInt(25) : py + 1.0 + random.nextInt(10);
-                    double sz = pz + 30.0 - random.nextInt(60);
-                    if (canBeSeen(sx, sy, sz)) {
-                        addParticle(new SkyParticle(sx, sy, sz, nextTex(), tickCounter + random.nextInt(4)));
-                        lastSkySpawn = now;
-                    }
-                }
-            }
+            spawnSkyParticle();
         }
 
         if (moveCount < MAX_MOVE && triggerMove.getValue()) {
@@ -157,7 +143,8 @@ public class Particles extends Module {
                     double sx = mc.player.getX() + 0.25 - random.nextDouble() * 0.5;
                     double sy = mc.player.getY() + 0.75 + random.nextDouble() * 0.75;
                     double sz = mc.player.getZ() + 0.25 - random.nextDouble() * 0.5;
-                    addParticle(new MoveParticle(sx, sy, sz, nextTex(), frameTimeMs != 0L ? frameTimeMs : System.currentTimeMillis(), tickCounter + 1));
+                    addParticle(new MoveParticle(sx, sy, sz, nextTex(),
+                            frameTimeMs != 0L ? frameTimeMs : System.currentTimeMillis(), tickCounter + 1));
                 }
             }
         }
@@ -244,7 +231,7 @@ public class Particles extends Module {
         for (Particle p : particles) {
             p.update(dt, moveDown, frameTimeMs);
             if (p.kind == KIND_MOVE && firstPerson) continue;
-            float alpha = p.getAlpha();
+            float alpha = (float) p.animation.getOutput();
             p.renderAlpha = alpha;
             if (alpha <= 0.005f) continue;
             batches[p.textureIdx].add(p);
@@ -253,7 +240,7 @@ public class Particles extends Module {
 
     private void appendQuad(BufferBuilder buffer, Matrix4f posMat, Particle p, double cx, double cy, double cz, int themeRgb) {
         int color = ((int) (p.renderAlpha * 255f) & 0xFF) << 24 | themeRgb;
-        float qMax = p.quadSize;
+        float qMax = p.quadSize - 0.75f;
         float qMin = -0.75f;
         float bx = (float) (p.x - cx);
         float by = (float) (p.y - cy);
@@ -281,6 +268,35 @@ public class Particles extends Module {
         buffer.vertex(posMat, x4, y4, z4).texture(0, 1).color(color);
     }
 
+    private void updateParticleVisibility() {
+        for (int i = particles.size() - 1; i >= 0; i--) {
+            Particle p = particles.get(i);
+            if (!moveDown && p.startY + 15.0 < p.y) {
+                p.animation.setDirection(Direction.BACKWARDS);
+            } else if (p.nextVisTick <= tickCounter) {
+                p.nextVisTick = tickCounter + VISIBILITY_RECHECK;
+                if (!canBeSeen(p.x, p.y, p.z)) {
+                    p.animation.setDirection(Direction.BACKWARDS);
+                }
+            }
+        }
+    }
+
+    private void spawnSkyParticle() {
+        var mc = MinecraftClient.getInstance();
+        long now = System.currentTimeMillis();
+        if (particles.size() >= MAX_TOTAL) return;
+        double px = mc.player.getX();
+        double py = mc.player.getY();
+        double pz = mc.player.getZ();
+        double sx = px + 30.0 - random.nextInt(60);
+        double sy = moveDown ? py + 10.0 + random.nextInt(25) : py + 1.0 + random.nextInt(10);
+        double sz = pz + 30.0 - random.nextInt(60);
+        if (canBeSeen(sx, sy, sz)) {
+            addParticle(new SkyParticle(sx, sy, sz, nextTex(), tickCounter + random.nextInt(4)));
+        }
+    }
+
     private boolean canBeSeen(double tx, double ty, double tz) {
         var mc = MinecraftClient.getInstance();
         double ay = ty - (moveDown ? 0.5 : 0.0);
@@ -302,7 +318,7 @@ public class Particles extends Module {
         double endY = ey + random.nextInt(10);
         double endZ = ez - 8.0 + random.nextInt(16);
         addParticle(new HitParticle(sx, sy, sz, nextTex(), endX, endY, endZ,
-            frameTimeMs != 0L ? frameTimeMs : System.currentTimeMillis(), tickCounter + 1));
+                frameTimeMs != 0L ? frameTimeMs : System.currentTimeMillis(), tickCounter + 1));
     }
 
     private void addParticle(Particle p) {
@@ -316,8 +332,7 @@ public class Particles extends Module {
 
     private void pruneDead() {
         for (int i = particles.size() - 1; i >= 0; i--) {
-            Particle p = particles.get(i);
-            if (p.fadingOut && p.fadeAlpha <= 0.005f) {
+            if (particles.get(i).animation.finished(Direction.BACKWARDS)) {
                 removeParticle(i);
             }
         }
@@ -343,10 +358,9 @@ public class Particles extends Module {
         final int textureIdx;
         final byte kind;
         final float quadSize;
+        final Animation animation;
         int nextVisTick;
         float renderAlpha;
-        float fadeAlpha;
-        boolean fadingOut;
 
         Particle(double x, double y, double z, int textureIdx, byte kind, float quadSize, int nextVisTick) {
             this.x = x;
@@ -357,19 +371,13 @@ public class Particles extends Module {
             this.kind = kind;
             this.quadSize = quadSize;
             this.nextVisTick = nextVisTick;
-            this.fadeAlpha = 0f;
+            this.animation = new EaseBackIn(325, 1.0, 0.1f, Direction.BACKWARDS);
+            this.animation.setDirection(Direction.FORWARDS);
         }
 
         void update(float dt, boolean moveDown, long nowMs) {
             this.y += (moveDown ? -1.5f : 1.5f) * dt;
-            if (fadingOut) {
-                fadeAlpha = Math.max(0, fadeAlpha - dt * FADE_OUT_SPEED);
-            } else {
-                fadeAlpha = Math.min(1, fadeAlpha + dt * FADE_IN_SPEED);
-            }
         }
-
-        float getAlpha() { return Math.max(0, Math.min(1, fadeAlpha)); }
     }
 
     private static class SkyParticle extends Particle {
@@ -380,20 +388,24 @@ public class Particles extends Module {
 
     private static class MoveParticle extends Particle {
         private final long bornAtMs;
+
         MoveParticle(double x, double y, double z, int textureIdx, long bornAtMs, int nextVisTick) {
             super(x, y, z, textureIdx, KIND_MOVE, 0.75f, nextVisTick);
             this.bornAtMs = bornAtMs;
         }
+
         @Override
         void update(float dt, boolean moveDown, long nowMs) {
-            super.update(dt, moveDown, nowMs);
-            if (nowMs - bornAtMs >= MOVE_LIFETIME) fadingOut = true;
+            if (nowMs - bornAtMs >= 500L) {
+                this.animation.setDirection(Direction.BACKWARDS);
+            }
         }
     }
 
     private static class HitParticle extends Particle {
         private final double endX, endY, endZ;
         private final long bornAtMs;
+
         HitParticle(double x, double y, double z, int textureIdx, double endX, double endY, double endZ, long bornAtMs, int nextVisTick) {
             super(x, y, z, textureIdx, KIND_HIT, 1.5f, nextVisTick);
             this.endX = endX;
@@ -401,18 +413,15 @@ public class Particles extends Module {
             this.endZ = endZ;
             this.bornAtMs = bornAtMs;
         }
+
         @Override
         void update(float dt, boolean moveDown, long nowMs) {
             float lerp = 1f - (float) Math.exp(LOG_035 * dt);
             x += (endX - x) * lerp;
             y += (endY - y) * lerp;
             z += (endZ - z) * lerp;
-            if (nowMs - bornAtMs >= HIT_LIFETIME) fadingOut = true;
-            if (!fadingOut && fadeAlpha < 1f) {
-                fadeAlpha = Math.min(1, fadeAlpha + dt * 3f);
-            }
-            if (fadingOut) {
-                fadeAlpha = Math.max(0, fadeAlpha - dt * 1.5f);
+            if (nowMs - bornAtMs >= 5000L) {
+                this.animation.setDirection(Direction.BACKWARDS);
             }
         }
     }

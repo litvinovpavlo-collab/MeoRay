@@ -20,6 +20,7 @@ import net.minecraft.client.util.InputUtil;
 import org.lwjgl.glfw.GLFW;
 import org.lwjgl.stb.STBImage;
 import java.nio.ByteBuffer;
+import java.util.BitSet;
 
 public class MeoRayClient implements ClientModInitializer {
     public static MeoRayClient INSTANCE;
@@ -27,6 +28,7 @@ public class MeoRayClient implements ClientModInitializer {
     public final ModuleManager moduleManager = new ModuleManager();
     private final ThemeManager themeManager = new ThemeManager();
     private KeyBinding toggleKey;
+    private final BitSet prevKeys = new BitSet(256);
 
     @Override
     public void onInitializeClient() {
@@ -63,6 +65,23 @@ public class MeoRayClient implements ClientModInitializer {
                     client.setScreen(new MeoRayClickGUI());
                 }
             }
+
+            if (client.currentScreen == null && client.player != null) {
+                long handle = client.getWindow().getHandle();
+                BitSet curKeys = new BitSet(256);
+                for (Module mod : moduleManager.getModules()) {
+                    int k = mod.getKey();
+                    if (k == 0 || k >= 256) continue;
+                    boolean down = GLFW.glfwGetKey(handle, k) == GLFW.GLFW_PRESS;
+                    curKeys.set(k, down);
+                    if (down && !prevKeys.get(k)) {
+                        mod.toggle();
+                    }
+                }
+                prevKeys.clear();
+                prevKeys.or(curKeys);
+            }
+
             moduleManager.onTick();
             WindowTitleAnimator.tick();
             MeoRayRPCUpdater.tick();

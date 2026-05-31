@@ -16,6 +16,7 @@
     "InGameOverlayRendererMixin",
     "ParticleManagerMixin",
     "BackgroundFogMixin",
+    "PlayerAttackMixin",
     "PlayerEntityRendererMixin"
   ],
   "injectors": {

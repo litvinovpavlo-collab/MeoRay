@@ -1,5 +1,6 @@
 package dev.meoray.client.mixin;
 
+import dev.meoray.client.MeoRayClient;
 import dev.meoray.client.feature.render.BetterWorld;
 import net.minecraft.client.render.BackgroundRenderer;
 import net.minecraft.client.render.Camera;
@@ -19,7 +20,19 @@ public class BackgroundFogMixin {
         if (bw != null && bw.isFogEnabled()) {
             Vector4f orig = cir.getReturnValue();
             float alpha = bw.getFogAlpha();
-            cir.setReturnValue(new Vector4f(orig.x * alpha, orig.y * alpha, orig.z * alpha, orig.w));
+
+            int accent = MeoRayClient.INSTANCE.getThemeManager().getRenderTheme().accent();
+            float ar = ((accent >> 16) & 0xFF) / 255f;
+            float ag = ((accent >> 8) & 0xFF) / 255f;
+            float ab = (accent & 0xFF) / 255f;
+
+            float blend = 0.35f;
+            cir.setReturnValue(new Vector4f(
+                orig.x * (1 - blend) + ar * blend * alpha,
+                orig.y * (1 - blend) + ag * blend * alpha,
+                orig.z * (1 - blend) + ab * blend * alpha,
+                orig.w
+            ));
         }
     }
 }
