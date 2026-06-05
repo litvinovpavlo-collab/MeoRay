@@ -28,6 +28,14 @@ public final class SkyConfig {
 
     public static void setBaseColor(Color c) { BASE_COLOR = c; compute(); }
 
+    public static void setBaseColorRgb(int rgb) {
+        int r = (rgb >> 16) & 0xFF;
+        int g = (rgb >> 8) & 0xFF;
+        int b = rgb & 0xFF;
+        BASE_COLOR = new Color(r, g, b);
+        compute();
+    }
+
     private static float hueShift(float h, float deg) {
         float s = h + deg / 360f;
         return s - (float) Math.floor(s);

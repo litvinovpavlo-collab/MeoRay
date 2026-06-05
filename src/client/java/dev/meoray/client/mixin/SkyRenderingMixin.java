@@ -54,8 +54,7 @@ public class SkyRenderingMixin {
         if (SkyShaderHolder.getProgram() == null) return false;
         var mc = MinecraftClient.getInstance();
         if (mc.world == null) return false;
-        float t = mc.world.getSkyAngle(mc.getRenderTickCounter().getTickDelta(false));
-        return t >= 0.26f && t <= 0.74f;
+        return true;
     }
 
     private static Module getBetterWorld() {

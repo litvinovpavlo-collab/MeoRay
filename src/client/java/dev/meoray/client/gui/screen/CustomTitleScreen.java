@@ -27,12 +27,16 @@ import org.joml.Matrix4f;
 import org.lwjgl.glfw.GLFW;
 
 import java.awt.Color;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ThreadLocalRandom;
+import net.fabricmc.loader.api.FabricLoader;
 
 public class CustomTitleScreen extends Screen {
 
@@ -64,6 +68,7 @@ public class CustomTitleScreen extends Screen {
     private double nickDragOffY;
     private static double savedNickX = -1;
     private static double savedNickY = -1;
+    private static final Path NICK_POS_FILE = FabricLoader.getInstance().getConfigDir().resolve("meoray").resolve("nickname_pos.txt");
 
 
 
@@ -106,6 +111,30 @@ public class CustomTitleScreen extends Screen {
             nickY = 10;
         }
 
+        loadNickPos();
+
+    }
+
+    private static void loadNickPos() {
+        try {
+            if (Files.exists(NICK_POS_FILE)) {
+                String content = Files.readString(NICK_POS_FILE).trim();
+                String[] parts = content.split(",");
+                if (parts.length == 2) {
+                    savedNickX = Double.parseDouble(parts[0]);
+                    savedNickY = Double.parseDouble(parts[1]);
+                }
+            }
+        } catch (IOException | NumberFormatException e) {
+        }
+    }
+
+    private static void saveNickPos() {
+        try {
+            Files.createDirectories(NICK_POS_FILE.getParent());
+            Files.writeString(NICK_POS_FILE, savedNickX + "," + savedNickY);
+        } catch (IOException e) {
+        }
     }
 
     @Override
@@ -202,12 +231,12 @@ public class CustomTitleScreen extends Screen {
         float dw = sfFont.getWidth(dateText, dateSize);
 
         ((BuiltText) Builder.text().font(sfFont).text(timeText)
-            .color(TEXT_WHITE).size(timeSize).thickness(0.1f).spacing(2f)
-            .build()).render(matrix, centerX - tw / 2f, centerY - 118f);
+            .color(TEXT_WHITE).size(timeSize).thickness(0.08f).spacing(4f)
+            .build()).render(matrix, centerX - tw / 2f, centerY - 125f);
 
         ((BuiltText) Builder.text().font(sfFont).text(dateText)
-            .color(TEXT_WHITE).size(dateSize).thickness(0.1f).spacing(1.5f)
-            .build()).render(matrix, centerX - dw / 2f, centerY - 88f);
+            .color(TEXT_WHITE).size(dateSize).thickness(0.08f).spacing(2.5f)
+            .build()).render(matrix, centerX - dw / 2f, centerY - 87f);
     }
 
     // ──────────────────────────────────────────────
@@ -405,6 +434,7 @@ public class CustomTitleScreen extends Screen {
             draggingNick = false;
             savedNickX = Math.max(0, Math.min(nickX, width - nickW));
             savedNickY = Math.max(0, Math.min(nickY, height - nickH));
+            saveNickPos();
         }
         return super.mouseReleased(mx, my, button);
     }

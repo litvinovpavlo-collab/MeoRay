@@ -23,7 +23,9 @@
     "MinecraftClientMixin",
     "LivingEntityRendererMixin",
     "EntityRendererMixin",
-    "WorldRendererMixin"
+    "WorldRendererMixin",
+    "MouseMixin",
+    "ChatScreenMixin"
   ],
   "injectors": {
     "defaultRequire": 1

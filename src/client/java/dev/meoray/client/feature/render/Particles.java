@@ -21,12 +21,11 @@ import net.minecraft.client.render.Camera;
 import net.minecraft.client.render.Tessellator;
 import net.minecraft.client.render.VertexFormat;
 import net.minecraft.client.render.VertexFormats;
+import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.util.Identifier;
-import net.minecraft.util.hit.HitResult;
 import net.minecraft.util.math.Vec3d;
-import net.minecraft.world.RaycastContext;
 import org.joml.Matrix4f;
 import org.joml.Quaternionf;
 import org.joml.Vector3f;
@@ -38,12 +37,10 @@ import java.util.Random;
 public class Particles extends Module {
 
     private static final int TYPE_COUNT = 9;
-    private static final int MAX_SKY = 100;
+    private static final int MAX_SKY = 150;
     private static final int MAX_MOVE = 64;
     private static final int MAX_HIT = 96;
-    private static final int MAX_TOTAL = 260;
-    private static final int VISIBILITY_RECHECK = 4;
-    private static final double LOG_035 = Math.log(0.35);
+    private static final int MAX_TOTAL = 310;
     private static final byte KIND_SKY = 0;
     private static final byte KIND_MOVE = 1;
     private static final byte KIND_HIT = 2;
@@ -65,7 +62,7 @@ public class Particles extends Module {
     private final BooleanSetting type7 = add(new BooleanSetting("Type 7", false));
     private final BooleanSetting type8 = add(new BooleanSetting("Type 8", false));
     private final BooleanSetting type9 = add(new BooleanSetting("Type 9", false));
-    private final ModeSetting moveMode = add(new ModeSetting("Move Mode", "Down", "Up", "Down"));
+    private final ModeSetting moveMode = add(new ModeSetting("Move Mode", "Down", "Down", "Up"));
     private final BooleanSetting triggerSky = add(new BooleanSetting("Sky", true));
     private final BooleanSetting triggerMove = add(new BooleanSetting("Move", true));
     private final BooleanSetting triggerAttack = add(new BooleanSetting("Attack", true));
@@ -73,9 +70,9 @@ public class Particles extends Module {
     private final List<Particle> particles = new ArrayList<>(256);
     private final List<Particle>[] batches = new List[TYPE_COUNT];
     private final Random random = new Random();
-    private final Quaternionf cameraRot = new Quaternionf();
     private final Vector3f rightAxis = new Vector3f();
     private final Vector3f upAxis = new Vector3f();
+    private final Quaternionf cameraRotation = new Quaternionf();
     private final int[] enabledTypeIndices = new int[TYPE_COUNT];
 
     private long lastRenderNano = System.nanoTime();
@@ -131,15 +128,16 @@ public class Particles extends Module {
         eyeZ = mc.player.getZ();
 
         rebuildEnabledTypes();
-        updateParticleVisibility();
 
         if (skyCount < MAX_SKY && triggerSky.getValue()) {
             spawnSkyParticle();
         }
 
+        updateParticleVisibility();
+
         if (moveCount < MAX_MOVE && triggerMove.getValue() && particles.size() < MAX_TOTAL) {
             var mov = mc.player.getMovement();
-            if (mov.x != 0 && mov.y != 0 && mov.z != 0) {
+            if (mov.x != 0 || mov.y != 0 || mov.z != 0) {
                 double sx = mc.player.getX() + 0.25 - random.nextDouble() * 0.5;
                 double sy = mc.player.getY() + 0.75 + random.nextDouble() * 0.75;
                 double sz = mc.player.getZ() + 0.25 - random.nextDouble() * 0.5;
@@ -168,14 +166,18 @@ public class Particles extends Module {
         Vec3d camPos = camera.getPos();
         double camX = camPos.x, camY = camPos.y, camZ = camPos.z;
 
-        cameraRot.set(camera.getRotation());
-        rightAxis.set(0.6f, 0, 0).rotate(cameraRot);
-        upAxis.set(0, 0.6f, 0).rotate(cameraRot);
+        cameraRotation.set(camera.getRotation());
+        rightAxis.set(0.6F, 0.0F, 0.0F).rotate(cameraRotation);
+        upAxis.set(0.0F, 0.6F, 0.0F).rotate(cameraRotation);
 
         boolean firstPerson = mc.options.getPerspective() == Perspective.FIRST_PERSON;
         int themeRgb = MeoRayClient.INSTANCE.getThemeManager().getCurrentTheme().accent() & 0xFFFFFF;
 
-        Matrix4f posMatrix = ctx.positionMatrix();
+        MatrixStack matrices = ctx.matrixStack() != null ? ctx.matrixStack() : new MatrixStack();
+        matrices.push();
+        matrices.translate(-camX, -camY, -camZ);
+        Matrix4f posMatrix = new Matrix4f(matrices.peek().getPositionMatrix());
+        matrices.pop();
 
         clearBatches();
         fillBatches(deltaTime, firstPerson);
@@ -194,7 +196,7 @@ public class Particles extends Module {
             RenderSystem.setShaderTexture(0, PARTICLE_TEX[texIdx]);
             BufferBuilder buffer = Tessellator.getInstance().begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_TEXTURE_COLOR);
             for (Particle p : batch) {
-                appendQuad(buffer, posMatrix, p, camX, camY, camZ, themeRgb);
+                appendQuad(buffer, posMatrix, p, themeRgb);
             }
             BufferRenderer.drawWithGlobalProgram(buffer.end());
         }
@@ -237,13 +239,13 @@ public class Particles extends Module {
         }
     }
 
-    private void appendQuad(BufferBuilder buffer, Matrix4f posMat, Particle p, double cx, double cy, double cz, int themeRgb) {
+    private void appendQuad(BufferBuilder buffer, Matrix4f posMat, Particle p, int themeRgb) {
         int color = ((int) (p.renderAlpha * 255f) & 0xFF) << 24 | themeRgb;
         float qMax = p.quadSize - 0.75f;
         float qMin = -0.75f;
-        float bx = (float) (p.x - cx);
-        float by = (float) (p.y - cy);
-        float bz = (float) (p.z - cz);
+        float bx = (float) p.x;
+        float by = (float) p.y;
+        float bz = (float) p.z;
 
         float x1 = bx + rightAxis.x * qMin + upAxis.x * qMax;
         float y1 = by + rightAxis.y * qMin + upAxis.y * qMax;
@@ -267,20 +269,6 @@ public class Particles extends Module {
         buffer.vertex(posMat, x4, y4, z4).texture(0, 1).color(color);
     }
 
-    private void updateParticleVisibility() {
-        for (int i = particles.size() - 1; i >= 0; i--) {
-            Particle p = particles.get(i);
-            if (!moveDown && p.startY + 15.0 < p.y) {
-                p.animation.setDirection(Direction.BACKWARDS);
-            } else if (p.nextVisTick <= tickCounter) {
-                p.nextVisTick = tickCounter + VISIBILITY_RECHECK;
-                if (!canBeSeen(p.x, p.y, p.z)) {
-                    p.animation.setDirection(Direction.BACKWARDS);
-                }
-            }
-        }
-    }
-
     private void spawnSkyParticle() {
         long ms = System.currentTimeMillis();
         if (ms - lastSkySpawnMs < 5) return;
@@ -290,22 +278,10 @@ public class Particles extends Module {
         double sx = px + 30.0 - random.nextInt(60);
         double sy = moveDown ? py + 10.0 + random.nextInt(25) : py + 1.0 + random.nextInt(10);
         double sz = pz + 30.0 - random.nextInt(60);
-        if (canBeSeen(sx, sy, sz)) {
+        if (canParticleBeSeen(sx, sy, sz)) {
             addParticle(new SkyParticle(sx, sy, sz, nextTex(), tickCounter + random.nextInt(4)));
             lastSkySpawnMs = ms;
         }
-    }
-
-    private boolean canBeSeen(double tx, double ty, double tz) {
-        var mc = MinecraftClient.getInstance();
-        double ay = ty - (moveDown ? 0.5 : 0.0);
-        double dx = tx - eyeX;
-        double dy = ay - eyeY;
-        double dz = tz - eyeZ;
-        if (dx * dx + dy * dy + dz * dz > 16384.0) return false;
-        Vec3d eye = new Vec3d(eyeX, eyeY, eyeZ);
-        Vec3d target = new Vec3d(tx, ay, tz);
-        return mc.world.raycast(new RaycastContext(eye, target, RaycastContext.ShapeType.COLLIDER, RaycastContext.FluidHandling.NONE, mc.player)).getType() == HitResult.Type.MISS;
     }
 
     private void spawnHitParticle(Entity entity) {
@@ -327,6 +303,35 @@ public class Particles extends Module {
             case 1 -> moveCount++;
             case 2 -> hitCount++;
         }
+    }
+
+    private void updateParticleVisibility() {
+        for (int i = particles.size() - 1; i >= 0; i--) {
+            Particle p = particles.get(i);
+            if (!moveDown && p.startY + 15.0 < p.y) {
+                p.animation.setDirection(Direction.BACKWARDS);
+            } else if (p.nextVisTick <= tickCounter) {
+                p.nextVisTick = tickCounter + 4;
+                if (!canParticleBeSeen(p.x, p.y, p.z)) {
+                    p.animation.setDirection(Direction.BACKWARDS);
+                }
+            }
+        }
+    }
+
+    private boolean canParticleBeSeen(double tx, double ty, double tz) {
+        var mc = MinecraftClient.getInstance();
+        double adjustedY = ty - (moveDown ? 0.5 : 0.0);
+        double dx = tx - eyeX;
+        double dy = adjustedY - eyeY;
+        double dz = tz - eyeZ;
+        if (dx * dx + dy * dy + dz * dz > 16384.0) return false;
+        Vec3d eye = new Vec3d(eyeX, eyeY, eyeZ);
+        Vec3d target = new Vec3d(tx, adjustedY, tz);
+        return mc.world.raycast(new net.minecraft.world.RaycastContext(eye, target,
+                net.minecraft.world.RaycastContext.ShapeType.COLLIDER,
+                net.minecraft.world.RaycastContext.FluidHandling.NONE, mc.player)).getType()
+                == net.minecraft.util.hit.HitResult.Type.MISS;
     }
 
     private void pruneDead() {
@@ -415,7 +420,8 @@ public class Particles extends Module {
 
         @Override
         void update(float dt, boolean moveDown, long nowMs) {
-            float lerp = 1f - (float) Math.exp(LOG_035 * dt);
+            double log035 = Math.log(0.35);
+            float lerp = 1f - (float) Math.exp(log035 * dt);
             x += (endX - x) * lerp;
             y += (endY - y) * lerp;
             z += (endZ - z) * lerp;

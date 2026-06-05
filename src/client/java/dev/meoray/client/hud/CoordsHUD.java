@@ -3,7 +3,9 @@ package dev.meoray.client.hud;
 import dev.meoray.client.MeoRayClient;
 import dev.meoray.client.gui.screen.MeoRayClickGUI;
 import dev.meoray.client.gui.theme.Theme;
+import dev.meoray.client.hud.draggable.Draggable;
 import dev.meoray.client.managers.FontManager;
+import dev.meoray.client.util.render.GlowRenderer;
 import dev.meoray.client.util.render.builders.Builder;
 import dev.meoray.client.util.render.builders.states.QuadColorState;
 import dev.meoray.client.util.render.builders.states.QuadRadiusState;
@@ -17,21 +19,17 @@ import net.minecraft.client.gui.screen.ChatScreen;
 import org.joml.Matrix4f;
 import org.lwjgl.glfw.GLFW;
 
-public class CoordsHUD {
-    private static float hudX = 10;
-    private static float hudY = 0;
-    private static boolean isDragging;
-    private static float dragOffX;
-    private static float dragOffY;
-    private static boolean wasMouseDown;
+public class CoordsHUD extends HudElement {
+    private static final Draggable draggable = new Draggable("CoordsHUD", 10, 200, 180, 18);
 
-    public static void render(DrawContext context) {
+    public CoordsHUD() {
+        super(draggable, "CoordsHUD");
+    }
+
+    @Override
+    public void render(DrawContext context) {
         MinecraftClient mc = MinecraftClient.getInstance();
         if (mc.player == null) return;
-
-        if (hudY == 0) {
-            hudY = mc.getWindow().getScaledHeight() - 60;
-        }
 
         boolean editable = mc.currentScreen instanceof ChatScreen || mc.currentScreen instanceof MeoRayClickGUI;
         double mx = mc.mouse.getX();
@@ -59,37 +57,23 @@ public class CoordsHUD {
         float textW = bpsW + sepW + xyzW;
         float padX = 8;
         float padY = 6;
-        float w = textW + padX + padX;
+        float w = textW + padX * 2;
         float h = textSize + padY * 2;
 
-        boolean mouseDown = GLFW.glfwGetMouseButton(mc.getWindow().getHandle(), GLFW.GLFW_MOUSE_BUTTON_LEFT) == GLFW.GLFW_PRESS;
+        draggable.setWidth(w);
+        draggable.setHeight(h);
 
-        if (editable) {
-            if (mouseDown && !wasMouseDown) {
-                if (scMx >= hudX && scMx <= hudX + w && scMy >= hudY && scMy <= hudY + h) {
-                    isDragging = true;
-                    dragOffX = scMx - hudX;
-                    dragOffY = scMy - hudY;
-                }
-            }
-            if (isDragging && mouseDown) {
-                hudX = scMx - dragOffX;
-                hudY = scMy - dragOffY;
-            }
-            if (!mouseDown) {
-                isDragging = false;
-            }
-        } else {
-            isDragging = false;
-        }
-        wasMouseDown = mouseDown;
+        // Position is updated by DraggableManager.updatePositions each frame
 
-        float x = hudX;
-        float y = hudY;
+        float x = draggable.getX();
+        float y = draggable.getY();
 
         Matrix4f matrix = context.getMatrices().peek().getPositionMatrix();
 
-        int bg = 0xC8121216;
+        int glowCol = (theme.accent() & 0x00FFFFFF) | 0xD0000000;
+        GlowRenderer.drawGlow(matrix, x, y, w, h, glowCol, 18f, 4.0f);
+
+        int bg = 0xE6121216;
         ((BuiltRectangle) Builder.rectangle()
             .size(new SizeState(w, h))
             .color(new QuadColorState(bg))
@@ -98,9 +82,9 @@ public class CoordsHUD {
             .build()).render(matrix, x, y);
 
         if (editable) {
-            int dotSpacing = 6;
+            int dotSpacing = 5;
             int dotSize = 2;
-            int dotColor = 0x66FFFFFF;
+            int dotColor = 0x99FFFFFF;
             float perimeter = 2 * (w + h);
             int dots = (int) (perimeter / dotSpacing);
             for (int di = 0; di < dots; di++) {

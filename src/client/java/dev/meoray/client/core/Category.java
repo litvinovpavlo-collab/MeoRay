@@ -2,7 +2,7 @@ package dev.meoray.client.core;
 
 public enum Category {
     COMBAT("Combat", "A", "icons"),
-    MOVEMENT("Movement", "H", "icons"),
+    MOVEMENT("Movement", "J", "icons"),
     PLAYER("Player", "I", "icons"),
     RENDER("Render", "B", "icons"),
     WORLD("World", "E", "icons"),

@@ -2,11 +2,14 @@ package dev.meoray.client;
 
 import dev.meoray.client.account.AccountManager;
 import dev.meoray.client.core.ModuleManager;
+import dev.meoray.client.managers.ConfigManager;
 import dev.meoray.client.gui.screen.MeoRayClickGUI;
 //import dev.nova.client.gui.ClickGUI;
 import dev.meoray.client.gui.theme.ThemeManager;
 import dev.meoray.client.hud.CoordsHUD;
+import dev.meoray.client.hud.HudElement;
 import dev.meoray.client.hud.InfoHUD;
+import dev.meoray.client.hud.draggable.DraggableManager;
 import dev.meoray.client.util.MeoRayRPC;
 import dev.meoray.client.util.MeoRayRPCUpdater;
 import dev.meoray.client.util.WindowTitleAnimator;
@@ -24,11 +27,20 @@ import java.util.BitSet;
 
 public class MeoRayClient implements ClientModInitializer {
     public static MeoRayClient INSTANCE;
-    public static float mainScale = 1.0f;
+    public static float mainScale = 1.00f;
+    public static boolean snowOn = false;
+    public static boolean starsOn = false;
+    public static boolean bubblesOn = false;
     public final ModuleManager moduleManager = new ModuleManager();
     private final ThemeManager themeManager = new ThemeManager();
+    private final DraggableManager draggableManager = new DraggableManager();
+    private ConfigManager configManager;
+    private MeoRayClickGUI clickGUI;
+    private final InfoHUD infoHUD = new InfoHUD();
+    private final CoordsHUD coordsHUD = new CoordsHUD();
     private KeyBinding toggleKey;
     private final BitSet prevKeys = new BitSet(256);
+    private int saveTimer = 0;
 
     @Override
     public void onInitializeClient() {
@@ -38,7 +50,13 @@ public class MeoRayClient implements ClientModInitializer {
         System.out.println("[MeoRay] Loaded " + AccountManager.getAccounts().size() + " accounts");
 
         moduleManager.init();
+        draggableManager.add(infoHUD);
+        draggableManager.add(coordsHUD);
         MeoRayRPC.start();
+
+        configManager = new ConfigManager(moduleManager, draggableManager, themeManager);
+        configManager.loadAll();
+        System.out.println("[MeoRay] Config loaded");
 
         toggleKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
                 "Open MeoRay GUI",
@@ -60,31 +78,27 @@ public class MeoRayClient implements ClientModInitializer {
         });
 
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
+            // Open ClickGUI on Right Shift
             while (toggleKey.wasPressed()) {
-                if (client.currentScreen == null) {
-                    client.setScreen(new MeoRayClickGUI());
+                if (client.currentScreen instanceof MeoRayClickGUI) {
+                    client.setScreen(null);
+                } else {
+                    clickGUI = new MeoRayClickGUI();
+                    client.setScreen(clickGUI);
                 }
             }
-
-            if (client.currentScreen == null && client.player != null) {
-                long handle = client.getWindow().getHandle();
-                BitSet curKeys = new BitSet(256);
-                for (Module mod : moduleManager.getModules()) {
-                    int k = mod.getKey();
-                    if (k == 0 || k >= 256) continue;
-                    boolean down = GLFW.glfwGetKey(handle, k) == GLFW.GLFW_PRESS;
-                    curKeys.set(k, down);
-                    if (down && !prevKeys.get(k)) {
-                        mod.toggle();
-                    }
-                }
-                prevKeys.clear();
-                prevKeys.or(curKeys);
-            }
-
+            // Update sky color from current theme
+            int accentRgb = themeManager.getRenderTheme().accent() & 0x00FFFFFF;
+            dev.meoray.client.util.render.SkyConfig.setBaseColorRgb(accentRgb);
             moduleManager.onTick();
             WindowTitleAnimator.tick();
             MeoRayRPCUpdater.tick();
+
+            saveTimer++;
+            if (saveTimer >= 1200) {
+                saveTimer = 0;
+                if (configManager != null) configManager.saveAll();
+            }
         });
 
         HudRenderCallback.EVENT.register((context, tickDelta) -> {
@@ -97,11 +111,22 @@ public class MeoRayClient implements ClientModInitializer {
                     if (s.getName().equals("Coordinates")) coordsOn = (boolean) s.getValue();
                 }
             }
+            // Update draggable positions every frame for any editable screen
+            net.minecraft.client.MinecraftClient mc = net.minecraft.client.MinecraftClient.getInstance();
+            if (mc.currentScreen instanceof net.minecraft.client.gui.screen.ChatScreen
+                    || mc.currentScreen instanceof MeoRayClickGUI) {
+                double mx = mc.mouse.getX();
+                double my = mc.mouse.getY();
+                float ms = MeoRayClient.mainScale;
+                if (draggableManager != null) {
+                    draggableManager.updatePositions((float) (mx / ms), (float) (my / ms));
+                }
+            }
             context.getMatrices().push();
             float ms = MeoRayClient.mainScale;
             context.getMatrices().scale(ms, ms, 1.0f);
-            if (wmOn) InfoHUD.render(context);
-            if (coordsOn) CoordsHUD.render(context);
+            if (wmOn) infoHUD.render(context);
+            if (coordsOn) coordsHUD.render(context);
             context.getMatrices().pop();
         });
 
@@ -110,6 +135,25 @@ public class MeoRayClient implements ClientModInitializer {
 
     public ThemeManager getThemeManager() {
         return themeManager;
+    }
+
+    public DraggableManager getDraggableManager() {
+        return draggableManager;
+    }
+
+    public MeoRayClickGUI getClickGUI() {
+        return clickGUI;
+    }
+
+    public ConfigManager getConfigManager() {
+        return configManager;
+    }
+
+    public void onShutdown() {
+        if (configManager != null) {
+            configManager.saveAll();
+            System.out.println("[MeoRay] Config saved");
+        }
     }
 
     private void loadWindowIcon() throws Exception {

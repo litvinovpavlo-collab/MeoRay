@@ -3,7 +3,9 @@ package dev.meoray.client.hud;
 import dev.meoray.client.MeoRayClient;
 import dev.meoray.client.gui.screen.MeoRayClickGUI;
 import dev.meoray.client.gui.theme.Theme;
+import dev.meoray.client.hud.draggable.Draggable;
 import dev.meoray.client.managers.FontManager;
+import dev.meoray.client.util.render.GlowRenderer;
 import dev.meoray.client.util.render.builders.Builder;
 import dev.meoray.client.util.render.builders.states.QuadColorState;
 import dev.meoray.client.util.render.builders.states.QuadRadiusState;
@@ -15,17 +17,16 @@ import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.ChatScreen;
 import org.joml.Matrix4f;
-import org.lwjgl.glfw.GLFW;
 
-public class InfoHUD {
-    private static float hudX = 10;
-    private static float hudY = 10;
-    private static boolean isDragging;
-    private static float dragOffX;
-    private static float dragOffY;
-    private static boolean wasMouseDown;
+public class InfoHUD extends HudElement {
+    private static final Draggable draggable = new Draggable("InfoHUD", 10, 10, 220, 18);
 
-    public static void render(DrawContext context) {
+    public InfoHUD() {
+        super(draggable, "InfoHUD");
+    }
+
+    @Override
+    public void render(DrawContext context) {
         MinecraftClient mc = MinecraftClient.getInstance();
         if (mc.player == null || mc.getNetworkHandler() == null) return;
 
@@ -53,50 +54,36 @@ public class InfoHUD {
         String sep1 = "  |  ";
         String fpsLabel = "FPS: " + fps;
         String pingLabel = "PING: " + ping + " ms";
-        String nickStr = nick;
 
         float textSize = 6.0F;
         float pawW = 9.0F;
         float spacer = 4.0F;
         float meorayW = medium.getWidth(meoray, textSize);
         float sepW = medium.getWidth(sep1, textSize);
-        float nickW = medium.getWidth(nickStr, textSize);
+        float nickW = medium.getWidth(nick, textSize);
         float fpsW = medium.getWidth(fpsLabel, textSize);
         float pingW = medium.getWidth(pingLabel, textSize);
         float textW = pawW + spacer + meorayW + sepW + nickW + sepW + fpsW + sepW + pingW;
         float padX = 8;
         float padY = 6;
-        float w = textW + padX + padX;
+        float w = textW + padX * 2;
         float h = textSize + padY * 2;
 
-        boolean mouseDown = GLFW.glfwGetMouseButton(mc.getWindow().getHandle(), GLFW.GLFW_MOUSE_BUTTON_LEFT) == GLFW.GLFW_PRESS;
+        // Update draggable size
+        draggable.setWidth(w);
+        draggable.setHeight(h);
 
-        if (editable) {
-            if (mouseDown && !wasMouseDown) {
-                if (scMx >= hudX && scMx <= hudX + w && scMy >= hudY && scMy <= hudY + h) {
-                    isDragging = true;
-                    dragOffX = scMx - hudX;
-                    dragOffY = scMy - hudY;
-                }
-            }
-            if (isDragging && mouseDown) {
-                hudX = scMx - dragOffX;
-                hudY = scMy - dragOffY;
-            }
-            if (!mouseDown) {
-                isDragging = false;
-            }
-        } else {
-            isDragging = false;
-        }
-        wasMouseDown = mouseDown;
+        // Position is updated by DraggableManager.updatePositions each frame
 
-        float x = hudX;
-        float y = hudY;
+        float x = draggable.getX();
+        float y = draggable.getY();
 
         Matrix4f matrix = context.getMatrices().peek().getPositionMatrix();
 
-        int bg = 0xC8121216;
+        int glowCol = (theme.accent() & 0x00FFFFFF) | 0xD0000000;
+        GlowRenderer.drawGlow(matrix, x, y, w, h, glowCol, 18f, 4.0f);
+
+        int bg = 0xE6121216;
         ((BuiltRectangle) Builder.rectangle()
             .size(new SizeState(w, h))
             .color(new QuadColorState(bg))
@@ -105,9 +92,9 @@ public class InfoHUD {
             .build()).render(matrix, x, y);
 
         if (editable) {
-            int dotSpacing = 6;
+            int dotSpacing = 5;
             int dotSize = 2;
-            int dotColor = 0x66FFFFFF;
+            int dotColor = 0x99FFFFFF;
             float perimeter = 2 * (w + h);
             int dots = (int) (perimeter / dotSpacing);
             for (int di = 0; di < dots; di++) {
@@ -148,7 +135,7 @@ public class InfoHUD {
 
         float cx4 = cx3 + sepW;
         ((BuiltText) Builder.text()
-            .font(medium).text(nickStr)
+            .font(medium).text(nick)
             .color(0xFFCCCCCC).size(textSize).thickness(0.04F)
             .build()).render(matrix, cx4, cy);
 
