@@ -25,7 +25,9 @@
     "EntityRendererMixin",
     "WorldRendererMixin",
     "MouseMixin",
-    "ChatScreenMixin"
+    "ChatScreenMixin",
+    "PlayerRotationMixin",
+    "PacketHandlerMixin"
   ],
   "injectors": {
     "defaultRequire": 1

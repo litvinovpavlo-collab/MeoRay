@@ -616,8 +616,8 @@ public class MeoRayClickGUI extends Screen {
                         }
                         float maV = ma.getValue();
                         if (i > 0) maV = Math.max(0f, maV - delay / 240f);
-                        visualY = cardY + offsetY + (1f - maV) * 8f;
-                        st.hoverOffset.setValue(0f);
+                        float visualY = cardY + offsetY + (1f - maV) * 8f;
+                        st.hoverOffset.snapTo(0f);
                         st.hoverOffset.animate(0f, 1, Easing.LINEAR);
                         boolean hover = (int) lx >= cardX && (int) lx <= cardX + colW
                             && (int) ly >= visualY && (int) ly <= visualY + cardH;
