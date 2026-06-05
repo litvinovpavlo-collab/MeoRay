@@ -1,12 +1,15 @@
 package dev.meoray.client.core;
 
 import dev.meoray.client.core.setting.Setting;
+import net.minecraft.client.MinecraftClient;
 
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
 public abstract class Module {
+    protected static final MinecraftClient mc = MinecraftClient.getInstance();
+
     private final String name;
     private final String description;
     private final Category category;
@@ -24,6 +27,10 @@ public abstract class Module {
     protected <T extends Setting<?>> T add(T s) {
         settings.add(s);
         return s;
+    }
+
+    public void addSettings(Setting<?>... settings) {
+        Collections.addAll(this.settings, settings);
     }
 
     public final void toggle() {

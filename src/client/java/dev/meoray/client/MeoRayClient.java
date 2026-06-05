@@ -18,6 +18,7 @@ import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
 import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;
 import dev.meoray.client.core.Module;
+import dev.meoray.client.feature.render.ESP;
 import net.minecraft.client.option.KeyBinding;
 import net.minecraft.client.util.InputUtil;
 import org.lwjgl.glfw.GLFW;
@@ -111,23 +112,37 @@ public class MeoRayClient implements ClientModInitializer {
                     if (s.getName().equals("Coordinates")) coordsOn = (boolean) s.getValue();
                 }
             }
-            // Update draggable positions every frame for any editable screen
+
             net.minecraft.client.MinecraftClient mc = net.minecraft.client.MinecraftClient.getInstance();
-            if (mc.currentScreen instanceof net.minecraft.client.gui.screen.ChatScreen
-                    || mc.currentScreen instanceof MeoRayClickGUI) {
-                double mx = mc.mouse.getX();
-                double my = mc.mouse.getY();
-                float ms = MeoRayClient.mainScale;
-                if (draggableManager != null) {
-                    draggableManager.updatePositions((float) (mx / ms), (float) (my / ms));
-                }
-            }
-            context.getMatrices().push();
             float ms = MeoRayClient.mainScale;
+
+            // Правильно конвертируем raw pixel mouse -> scaled coords -> делим на ms
+            double rawMx = mc.mouse.getX();
+            double rawMy = mc.mouse.getY();
+            int winW = mc.getWindow().getWidth();
+            int winH = mc.getWindow().getHeight();
+            int scW = mc.getWindow().getScaledWidth();
+            int scH = mc.getWindow().getScaledHeight();
+            float mx = (float) (rawMx * scW / winW / ms);
+            float my = (float) (rawMy * scH / winH / ms);
+
+            if (draggableManager != null) {
+                draggableManager.updatePositions(mx, my);
+            }
+
+            context.getMatrices().push();
             context.getMatrices().scale(ms, ms, 1.0f);
             if (wmOn) infoHUD.render(context);
             if (coordsOn) coordsHUD.render(context);
             context.getMatrices().pop();
+        });
+
+        HudRenderCallback.EVENT.register((ctx, tickDeltaManager) -> {
+            float tickDelta = tickDeltaManager.getTickDelta(false);
+            Module esp = INSTANCE.moduleManager.getByName("ESP");
+            if (esp != null && esp.isEnabled() && esp instanceof ESP espModule) {
+                espModule.onRender2D(ctx, tickDelta);
+            }
         });
 
         System.out.println("MeoRay client initialized");

@@ -27,7 +27,8 @@
     "MouseMixin",
     "ChatScreenMixin",
     "PlayerRotationMixin",
-    "PacketHandlerMixin"
+    "PacketHandlerMixin",
+    "MouseHudMixin"
   ],
   "injectors": {
     "defaultRequire": 1

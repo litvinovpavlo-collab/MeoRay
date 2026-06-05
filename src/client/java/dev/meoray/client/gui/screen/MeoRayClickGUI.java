@@ -2032,7 +2032,8 @@ public class MeoRayClickGUI extends Screen {
             float settingsStartY = cardY + headerH;
 
             if (expanded && settingsH > 0 && ly > settingsStartY) {
-                if (handleSettingsClick(mod, lx, ly, cardX, cardY, colW, open)) {
+                float bodyScroll = bodyScrollOffsets.getOrDefault(mod.getName(), 0f);
+                if (handleSettingsClick(mod, lx, ly + bodyScroll, cardX, cardY, colW, open)) {
                     return true;
                 }
             }
@@ -2337,57 +2338,73 @@ public class MeoRayClickGUI extends Screen {
 
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double horizontalAmount, double verticalAmount) {
-        float gx = (width - W) / 2f;
-        float gy = (height - H) / 2f;
+        float gx = (width - W) / 2f + guiOffsetX;
+        float gy = (height - H) / 2f + guiOffsetY;
         float scrollAreaTop = gy + 14 + 20;
-        float scrollAreaBottom = gy + H - 8;
-        float open = openAnim.getValue();
-        float ms = MeoRayClient.mainScale;
-        float scale = (0.82f + 0.18f * open) * ms;
-        float cx = width / 2f;
-        float cy = height / 2f;
+        float scrollAreaBottom = gy + H - BOTTOM_BAR;
 
         float ly = (float) mouseY;
         float lx = (float) mouseX;
+
         if (ly < scrollAreaTop || ly > scrollAreaBottom) {
             return super.mouseScrolled(mouseX, mouseY, horizontalAmount, verticalAmount);
         }
 
-        Module hoveredMod = null;
-        for (Module m : MeoRayClient.INSTANCE.moduleManager.getModules()) {
-            if (!"Combat Movement Player Render World Misc Settings Themes".contains(m.getCategory().name())) continue;
-            int idx = MeoRayClient.INSTANCE.moduleManager.getByCategory(m.getCategory()).indexOf(m);
-            if (idx < 0) continue;
-            float colW = (W - 28 - 5) / 2f;
-            int col = idx % 2;
-            int row = idx / 2;
-            float cardX = gx + 14 + col * (colW + 5);
-            float cardY = gy + 14 + 20 + row * 50 - contentScroll;
-            if (m.getCategory().equals(selectedCategory)) {
-                float cardH = 30 + getSettingsFullHeight(m);
-                if (expandedModules.getOrDefault(m.getName(), false)) {
-                    ModuleAnimState st = moduleAnims.get(m.getName());
-                    float ex = st != null ? st.expand.getValue() : 0f;
-                    cardH = 30 + getSettingsFullHeight(m) * ex;
-                }
-                if (ly >= cardY + 30 && ly <= cardY + cardH && lx >= cardX && lx <= cardX + colW) {
-                    hoveredMod = m;
-                    break;
+        // === Проверяем находится ли курсор над развёрнутой карточкой ===
+        Category cat = Category.ALL[selectedCategory];
+        if (cat != Category.THEMES && cat != Category.SETTINGS) {
+            List<Module> allMods = MeoRayClient.INSTANCE.moduleManager.getByCategory(cat);
+            String searchText = searchElement.getValue();
+            List<Module> modules = searchText.isEmpty() ? allMods
+                : allMods.stream().filter(m -> m.getName().toLowerCase().contains(searchText.toLowerCase()))
+                    .collect(java.util.stream.Collectors.toList());
+
+            int cxx = (int) (gx + 14);
+            int cyy = (int) (gy + 14);
+            int cw = W - 28;
+            int gap = 5;
+            int colW = (cw - gap) / 2;
+
+            int[] moduleCol = new int[modules.size()];
+            for (int i = 0; i < modules.size(); i++) moduleCol[i] = i % 2;
+
+            float[] colYs = { cyy + 20, cyy + 20 };
+
+            for (int i = 0; i < modules.size(); i++) {
+                Module mod = modules.get(i);
+                int col = moduleCol[i];
+                float cardH = getCardAnimatedHeight(mod);
+                float cardX = cxx + col * (colW + gap);
+                float cardY = colYs[col] - contentScroll;
+                colYs[col] = colYs[col] + cardH + gap;
+
+                // Проверяем находится ли курсор над ТЕЛОМ (не header) развёрнутой карточки
+                boolean expanded = expandedModules.getOrDefault(mod.getName(), false);
+                if (!expanded) continue;
+
+                float bodyY = cardY + HEADER_H;
+                float bodyH = cardH - HEADER_H;
+                if (bodyH <= 0) continue;
+
+                if (lx >= cardX && lx <= cardX + colW && ly >= bodyY && ly <= bodyY + bodyH) {
+                    // Курсор над телом — скроллим тело
+                    String mn = mod.getName();
+                    float maxScroll = bodyScrollMax.getOrDefault(mn, 0f);
+                    if (maxScroll > 0f) {
+                        float cur = bodyScrollOffsets.getOrDefault(mn, 0f);
+                        cur -= (float) verticalAmount * 16f;
+                        if (cur < 0) cur = 0;
+                        if (cur > maxScroll) cur = maxScroll;
+                        bodyScrollOffsets.put(mn, cur);
+                        return true;
+                    }
+                    // если в теле нечего скроллить — глотаем событие, чтобы не скроллить контейнер
+                    return true;
                 }
             }
         }
-        if (hoveredMod != null) {
-            String mn = hoveredMod.getName();
-            float maxScroll = bodyScrollMax.getOrDefault(mn, 0f);
-            if (maxScroll > 0f) {
-                float cur = bodyScrollOffsets.getOrDefault(mn, 0f);
-                cur -= (float) verticalAmount * 16f;
-                if (cur < 0) cur = 0;
-                if (cur > maxScroll) cur = maxScroll;
-                bodyScrollOffsets.put(mn, cur);
-                return true;
-            }
-        }
+
+        // === Иначе скроллим основной контент ===
         contentScroll -= (float) verticalAmount * 16f;
         return true;
     }
@@ -2409,10 +2426,10 @@ public class MeoRayClickGUI extends Screen {
         if (button == 0 && draggingGui) {
             float newGx = (float) mx - dragGuiOffX;
             float newGy = (float) my - dragGuiOffY;
-            int minX = -W / 2;
-            int maxX = width - W / 2;
-            int minY = 0;
-            int maxY = height - 10;
+            int minX = -W + 50;
+            int maxX = width - 50;
+            int minY = -(height - H) / 2;
+            int maxY = height - 30;
             guiOffsetXTarget = Math.max(minX, Math.min(maxX, newGx - (width - W) / 2));
             guiOffsetYTarget = Math.max(minY, Math.min(maxY, newGy - (height - H) / 2));
             return true;

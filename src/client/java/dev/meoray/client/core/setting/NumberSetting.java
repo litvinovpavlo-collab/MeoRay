@@ -14,6 +14,11 @@ public class NumberSetting extends Setting<Double> {
     public double getMax() { return max; }
     public double getStep() { return step; }
 
+    @Override
+    public void setValue(Double value) {
+        super.setValue(Math.max(min, Math.min(max, Math.round(value / step) * step)));
+    }
+
     public String formatValue() {
         return String.format("%.1f", value);
     }

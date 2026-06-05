@@ -67,6 +67,24 @@ public class DraggableManager {
         }
     }
 
+    public void onMouseClick(int button, double mx, double my) {
+        for (HudElement el : elements) {
+            Draggable d = el.getDraggable();
+            if (d == null || d.isDragging()) continue;
+            d.setMouseXStart(mx);
+            d.setMouseYStart(my);
+            d.setButton(button);
+            d.mouseClick();
+        }
+    }
+
+    public void onRelease() {
+        for (HudElement el : elements) {
+            Draggable d = el.getDraggable();
+            if (d != null) d.endDrag();
+        }
+    }
+
     public void renderPanels(DrawContext context) {
         boolean editable = MinecraftClient.getInstance().currentScreen instanceof ChatScreen
                 || MinecraftClient.getInstance().currentScreen instanceof MeoRayClickGUI;

@@ -1,6 +1,5 @@
 package dev.meoray.client.mixin;
 
-import dev.meoray.client.feature.visual.wings.WingsLayer;
 import net.minecraft.client.render.entity.EntityRendererFactory;
 import net.minecraft.client.render.entity.LivingEntityRenderer;
 import net.minecraft.client.render.entity.PlayerEntityRenderer;
@@ -20,8 +19,5 @@ public abstract class PlayerEntityRendererMixin extends LivingEntityRenderer<net
 
     @Inject(method = "<init>", at = @At("TAIL"))
     private void onInit(EntityRendererFactory.Context ctx, boolean slim, CallbackInfo ci) {
-        System.out.println("[PlayerEntityRendererMixin] Добавляем WingsLayer в PlayerEntityRenderer");
-        this.addFeature(new WingsLayer(this));
-        System.out.println("[PlayerEntityRendererMixin] WingsLayer добавлен");
     }
 }
