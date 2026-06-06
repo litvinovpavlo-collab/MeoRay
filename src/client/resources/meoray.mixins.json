@@ -28,7 +28,10 @@
     "ChatScreenMixin",
     "PlayerRotationMixin",
     "PacketHandlerMixin",
-    "MouseHudMixin"
+    "MouseHudMixin",
+    "ToastManagerMixin",
+    "HeldItemRendererMixin",
+    "ClickFriendMixin"
   ],
   "injectors": {
     "defaultRequire": 1

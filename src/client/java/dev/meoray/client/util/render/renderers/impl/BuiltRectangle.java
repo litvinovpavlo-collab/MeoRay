@@ -20,6 +20,7 @@ import org.joml.Matrix4f;
 
 @Environment(EnvType.CLIENT)
 public record BuiltRectangle(SizeState size, QuadRadiusState radius, QuadColorState color, float smoothness) implements IRenderer {
+    private static final Tessellator TESS = new Tessellator(512);
     private static final ShaderProgramKey RECTANGLE_SHADER_KEY = new ShaderProgramKey(
         ResourceProvider.getShaderIdentifier("rectangle"),
         VertexFormats.POSITION_COLOR,
@@ -39,7 +40,7 @@ public record BuiltRectangle(SizeState size, QuadRadiusState radius, QuadColorSt
         shader.getUniform("Radius").set(this.radius.radius1(), this.radius.radius2(), this.radius.radius3(), this.radius.radius4());
         shader.getUniform("Smoothness").set(this.smoothness);
 
-        BufferBuilder builder = Tessellator.getInstance().begin(        VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_COLOR);
+        BufferBuilder builder = TESS.begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_COLOR);
         builder.vertex(matrix, x, y, z).color(this.color.color1());
         builder.vertex(matrix, x, y + height, z).color(this.color.color2());
         builder.vertex(matrix, x + width, y + height, z).color(this.color.color3());

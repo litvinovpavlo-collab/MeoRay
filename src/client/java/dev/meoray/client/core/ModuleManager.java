@@ -4,6 +4,8 @@ import dev.meoray.client.feature.combat.*;
 import dev.meoray.client.feature.movement.*;
 import dev.meoray.client.feature.player.*;
 import dev.meoray.client.feature.render.*;
+import dev.meoray.client.feature.misc.ClickFriend;
+import dev.meoray.client.feature.misc.FakePlayer;
 import dev.meoray.client.feature.misc.Interface;
 
 import java.util.ArrayList;
@@ -22,7 +24,6 @@ public class ModuleManager {
         register(new NoSlow());
         register(new NoFall());
         register(new ESP());
-        register(new ESP3D());
         register(new ChinaHat());
         register(new TargetHUD());
         register(new NoRender());
@@ -30,6 +31,11 @@ public class ModuleManager {
         register(new Particles());
         register(new FullBright());
         register(new Interface());
+        register(new HitEffect());
+        register(new SwordAnimation());
+        register(new ClickFriend());
+        register(new FakePlayer());
+        register(new Arrows());
     }
 
     private void register(Module m) {

@@ -7,6 +7,7 @@ import dev.meoray.client.core.setting.ModeSetting;
 import dev.meoray.client.core.setting.NumberSetting;
 import dev.meoray.client.rotation.NeuroRotation;
 import dev.meoray.client.rotation.Rotation;
+import dev.meoray.client.hud.TargetHUD;
 import dev.meoray.client.util.CombatUtil;
 import dev.meoray.client.util.RotationUtil;
 import dev.meoray.client.util.TPSUtil;
@@ -143,6 +144,7 @@ public class AttackAura extends Module {
         neuro.setGCD(gcd.getValue().floatValue());
 
         target = findBestTarget();
+        if (target instanceof LivingEntity living) TargetHUD.setTarget(living);
         if (target == null) {
             cleanup();
             return;

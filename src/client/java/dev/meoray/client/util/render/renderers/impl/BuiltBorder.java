@@ -20,6 +20,7 @@ import org.joml.Matrix4f;
 
 @Environment(EnvType.CLIENT)
 public record BuiltBorder(SizeState size, QuadRadiusState radius, QuadColorState color, float thickness, float internalSmoothness, float externalSmoothness) implements IRenderer {
+    private static final Tessellator TESS = new Tessellator(512);
     private static final ShaderProgramKey BORDER_SHADER_KEY = new ShaderProgramKey(
         ResourceProvider.getShaderIdentifier("border"),
         VertexFormats.POSITION_COLOR,
@@ -40,7 +41,7 @@ public record BuiltBorder(SizeState size, QuadRadiusState radius, QuadColorState
         shader.getUniform("Thickness").set(this.thickness);
         shader.getUniform("Smoothness").set(this.internalSmoothness, this.externalSmoothness);
 
-        BufferBuilder builder = Tessellator.getInstance().begin(        VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_COLOR);
+        BufferBuilder builder = TESS.begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_COLOR);
         builder.vertex(matrix, x, y, z).color(this.color.color1());
         builder.vertex(matrix, x, y + height, z).color(this.color.color2());
         builder.vertex(matrix, x + width, y + height, z).color(this.color.color3());

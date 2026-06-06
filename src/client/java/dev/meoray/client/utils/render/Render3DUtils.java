@@ -195,6 +195,41 @@ public class Render3DUtils {
         RenderSystem.lineWidth(1f);
     }
 
+    public static void drawLine(MatrixStack matrices, Vec3d from, Vec3d to, int color, float lineWidth) {
+        Camera camera = mc.gameRenderer.getCamera();
+        Vec3d camPos = camera.getPos();
+
+        float a = ((color >> 24) & 0xFF) / 255f;
+        float r = ((color >> 16) & 0xFF) / 255f;
+        float g = ((color >> 8) & 0xFF) / 255f;
+        float b = (color & 0xFF) / 255f;
+
+        RenderSystem.setShader(ShaderProgramKeys.POSITION_COLOR);
+        RenderSystem.enableBlend();
+        RenderSystem.defaultBlendFunc();
+        RenderSystem.disableCull();
+        RenderSystem.disableDepthTest();
+        RenderSystem.lineWidth(lineWidth);
+
+        Matrix4f matrix = matrices.peek().getPositionMatrix();
+        Tessellator tess = Tessellator.getInstance();
+        BufferBuilder buf = tess.begin(VertexFormat.DrawMode.DEBUG_LINES, VertexFormats.POSITION_COLOR);
+
+        buf.vertex(matrix,
+                (float)(from.x - camPos.x), (float)(from.y - camPos.y), (float)(from.z - camPos.z))
+                .color(r, g, b, a);
+        buf.vertex(matrix,
+                (float)(to.x - camPos.x), (float)(to.y - camPos.y), (float)(to.z - camPos.z))
+                .color(r, g, b, a);
+
+        BufferRenderer.drawWithGlobalProgram(buf.end());
+
+        RenderSystem.enableDepthTest();
+        RenderSystem.enableCull();
+        RenderSystem.disableBlend();
+        RenderSystem.lineWidth(1f);
+    }
+
     private static void line(BufferBuilder buf, Matrix4f matrix,
                               double x1, double y1, double z1,
                               double x2, double y2, double z2,

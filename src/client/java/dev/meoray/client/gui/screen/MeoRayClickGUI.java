@@ -4,6 +4,7 @@ import dev.meoray.client.MeoRayClient;
 import dev.meoray.client.core.Category;
 import dev.meoray.client.core.Module;
 import dev.meoray.client.core.setting.BooleanSetting;
+import dev.meoray.client.core.setting.GroupSetting;
 import dev.meoray.client.core.setting.ModeSetting;
 import dev.meoray.client.core.setting.NumberSetting;
 import dev.meoray.client.core.setting.Setting;
@@ -167,6 +168,7 @@ public class MeoRayClickGUI extends Screen {
     private final SearchElement searchElement = new SearchElement();
     private final Map<String, Float> sliderAnimatedProgress = new HashMap<>();
     private final Map<String, AnimatedFloat> modeDropdownAnims = new HashMap<>();
+    private final Map<String, AnimatedFloat> groupDropdownAnims = new HashMap<>();
     private final Map<String, Float> bodyScrollOffsets = new HashMap<>();
     private final Map<String, Float> bodyScrollMax = new HashMap<>();
     private String hoveredSliderKey;
@@ -624,6 +626,7 @@ public class MeoRayClickGUI extends Screen {
                         if (hover) { hoveredModule = mod; hoveredModuleCardX = cardX; hoveredModuleCardY = visualY; hoveredModuleCardW = colW; foundHover = true; }
                         RenderSystem.setShaderColor(1f, 1f, 1f, maV * open);
                         renderCard(matrix, cardX, visualY, colW, cardH, mod, hover, open, theme, lx, ly);
+                        enableContentScissor(cx - 5, headerBottom - 5, cw + 10, gy + H - BOTTOM_BAR - headerBottom);
                         colYs[col] = colYs[col] + cardH + gap;
                         continue;
                     } else {
@@ -705,6 +708,26 @@ public class MeoRayClickGUI extends Screen {
     }
 
     private void renderCard(Matrix4f matrix, float x, float y, float w, float h, Module mod, boolean hover, float open, Theme theme, float lx, float ly) {
+        // === FIX: клипаем всю карточку по границам контентной области меню ===
+        var winC = MinecraftClient.getInstance().getWindow();
+        float guiTopC = (winC.getScaledHeight() - H) / 2f + guiOffsetY;
+        float guiLeftC = (winC.getScaledWidth() - W) / 2f + guiOffsetX;
+        float contentTopC = guiTopC + 14 + 18;
+        float contentBottomC = guiTopC + H - BOTTOM_BAR - 2;
+        float contentLeftC = guiLeftC + 14 - 5;
+        float contentRightC = guiLeftC + W - 14 + 5;
+
+        float clipTop = Math.max(y, contentTopC);
+        float clipBottom = Math.min(y + h, contentBottomC);
+        float clipLeft = Math.max(x, contentLeftC);
+        float clipRight = Math.min(x + w, contentRightC);
+        float clipH = clipBottom - clipTop;
+        float clipW = clipRight - clipLeft;
+
+        if (clipH <= 0 || clipW <= 0) return;
+
+        enableBodyScissor(clipLeft, clipTop, clipW, clipH);
+
         ModuleAnimState state = getOrCreateState(mod);
         float highlight = state.highlight.getValue();
         float knobPos = state.knob.getValue();
@@ -822,23 +845,47 @@ public class MeoRayClickGUI extends Screen {
         if (expand > 0.005f && bodyH > 0.5f) {
             float setsY = y + HEADER_H;
             float setsH = bodyH;
-            // Calculate content height for scroll
-            float contentH = computeContentHeight(mod);
-            float maxScroll = Math.max(0f, contentH - setsH);
-            float scroll = bodyScrollOffsets.getOrDefault(mod.getName(), 0f);
-            if (scroll > maxScroll) scroll = maxScroll;
-            if (scroll < 0) scroll = 0;
-            bodyScrollOffsets.put(mod.getName(), scroll);
-            bodyScrollMax.put(mod.getName(), maxScroll);
-            // Clip body content to its visible region
-            enableBodyScissor(x, setsY, w, setsH);
-            renderSettingsContent(matrix, x, setsY, w, setsH, mod, expand, open, theme, lx, ly, scroll);
-            RenderSystem.disableScissor();
-            // Render scrollbar
-            if (maxScroll > 1f) {
-                renderScrollbar(matrix, x + w - 3f, setsY + 2, 2f, setsH - 4, scroll, maxScroll, theme, open);
+
+            // === FIX: обрезаем body по верхней И нижней границе контентной зоны меню ===
+            var win = MinecraftClient.getInstance().getWindow();
+            float guiTop = (win.getScaledHeight() - H) / 2f + guiOffsetY;
+            float contentTop = guiTop + 14 + 18;
+            float contentBottom = guiTop + H - BOTTOM_BAR - 2;
+            float guiLeft = (win.getScaledWidth() - W) / 2f + guiOffsetX;
+            float contentLeft = guiLeft + 14 - 5;
+            float contentRight = guiLeft + W - 14 + 5;
+
+            float visibleBodyTop = Math.max(setsY, contentTop);
+            float visibleBodyBottom = Math.min(setsY + setsH, contentBottom);
+            float visibleBodyH = Math.max(0, visibleBodyBottom - visibleBodyTop);
+
+            float visibleBodyLeft = Math.max(x, contentLeft);
+            float visibleBodyRight = Math.min(x + w, contentRight);
+            float visibleBodyW = Math.max(0, visibleBodyRight - visibleBodyLeft);
+
+            if (visibleBodyH > 0.5f && visibleBodyW > 0.5f) {
+                // Calculate content height for scroll
+                float contentH = computeContentHeight(mod);
+                float maxScroll = Math.max(0f, contentH - setsH);
+                float scroll = bodyScrollOffsets.getOrDefault(mod.getName(), 0f);
+                if (scroll > maxScroll) scroll = maxScroll;
+                if (scroll < 0) scroll = 0;
+                bodyScrollOffsets.put(mod.getName(), scroll);
+                bodyScrollMax.put(mod.getName(), maxScroll);
+
+                // Clip body content по ВСЕМ границам меню (верх/низ/лево/право)
+                enableBodyScissor(visibleBodyLeft, visibleBodyTop, visibleBodyW, visibleBodyH);
+                renderSettingsContent(matrix, x, setsY, w, setsH, mod, expand, open, theme, lx, ly, scroll);
+                RenderSystem.disableScissor();
+
+                // Render scrollbar
+                if (maxScroll > 1f) {
+                    float scrollH = Math.min(setsH - 4, visibleBodyH - 4);
+                    renderScrollbar(matrix, x + w - 3f, setsY + 2, 2f, scrollH, scroll, maxScroll, theme, open);
+                }
             }
         }
+        RenderSystem.disableScissor();
     }
 
     private float computeContentHeight(Module mod) {
@@ -848,6 +895,7 @@ public class MeoRayClickGUI extends Screen {
         h += KEYBIND_H + SETTING_GAP;
         int boolCount = 0, numCount = 0, modeCount = 0;
         for (Setting<?> s : settings) {
+            if (!s.isVisible()) continue;
             if (mod.getName().equals("Particles") && s instanceof BooleanSetting && s.getName().startsWith("Type ")) continue;
             if (s instanceof NumberSetting) numCount++;
             else if (s instanceof BooleanSetting) boolCount++;
@@ -857,6 +905,23 @@ public class MeoRayClickGUI extends Screen {
         h += boolRows * (SETTING_BTN_H + SETTING_GAP);
         h += numCount * (26f + SETTING_GAP);
         h += modeCount * (SETTING_BTN_H + SETTING_GAP);
+        int groupCount = 0;
+        float groupExpandedH = 0f;
+        for (Setting<?> s : settings) {
+            if (!s.isVisible()) continue;
+            if (s instanceof GroupSetting gs) {
+                groupCount++;
+                String key = mod.getName() + "|grp|" + gs.getName();
+                AnimatedFloat anim = groupDropdownAnims.get(key);
+                float p = anim != null ? anim.getValue() : 0f;
+                if (p > 0.01f) {
+                    float itemH = SETTING_BTN_H;
+                    groupExpandedH += gs.getOptions().size() * (itemH + 2) * p + 4 * p;
+                }
+            }
+        }
+        h += groupCount * (SETTING_BTN_H + SETTING_GAP);
+        h += groupExpandedH;
 
         int typeCount = 0;
         for (Setting<?> s : settings) {
@@ -940,6 +1005,7 @@ public class MeoRayClickGUI extends Screen {
         java.util.List<ModeSetting> modes = new java.util.ArrayList<>();
 
         for (Setting<?> s : settings) {
+            if (!s.isVisible()) continue;
             if (s instanceof BooleanSetting bs) {
                 if (isParticles && bs.getName().startsWith("Type ")) {
                     typeSettings.add(bs);
@@ -1015,6 +1081,25 @@ public class MeoRayClickGUI extends Screen {
             if (curY + modeRowH > visibleEnd) break;
             renderModeCell(matrix, settingX, curY, settingW, mod, ms, lockAlpha, open, theme, medium, lx, ly);
             curY += modeRowH + SETTING_GAP;
+        }
+
+        // === Group settings ===
+        java.util.List<GroupSetting> groups = new java.util.ArrayList<>();
+        for (Setting<?> s : settings) {
+            if (!s.isVisible()) continue;
+            if (s instanceof GroupSetting gs) groups.add(gs);
+        }
+        for (GroupSetting gs : groups) {
+            if (curY + SETTING_BTN_H > visibleEnd) break;
+            renderGroupCell(matrix, settingX, curY, settingW, mod, gs, lockAlpha, open, theme, medium, lx, ly);
+
+            String key = mod.getName() + "|grp|" + gs.getName();
+            AnimatedFloat anim = groupDropdownAnims.computeIfAbsent(key, k -> new AnimatedFloat(0f));
+            float p = anim.update();
+            float itemH = SETTING_BTN_H;
+            float listH = gs.getOptions().size() * (itemH + 2) * p;
+
+            curY += SETTING_BTN_H + SETTING_GAP + listH + (p > 0.01f ? 4 : 0);
         }
 
         // === Particles type grid (special) ===
@@ -1800,6 +1885,7 @@ public class MeoRayClickGUI extends Screen {
         int numCount = 0;
         int modeCount = 0;
         for (Setting<?> s : settings) {
+            if (!s.isVisible()) continue;
             if (mod.getName().equals("Particles") && s instanceof BooleanSetting && s.getName().startsWith("Type ")) continue;
             if (s instanceof NumberSetting) numCount++;
             else if (s instanceof BooleanSetting) boolCount++;
@@ -1809,9 +1895,18 @@ public class MeoRayClickGUI extends Screen {
         h += boolRows * (SETTING_BTN_H + SETTING_GAP);
         h += numCount * (26f + SETTING_GAP);
         h += modeCount * (SETTING_BTN_H + SETTING_GAP);
+        int groupCount = 0;
+        for (Setting<?> s : settings) {
+            if (!s.isVisible()) continue;
+            if (s instanceof GroupSetting) {
+                groupCount++;
+            }
+        }
+        h += groupCount * (SETTING_BTN_H + SETTING_GAP);
 
         int typeCount = 0;
         for (Setting<?> s : settings) {
+            if (!s.isVisible()) continue;
             if (mod.getName().equals("Particles") && s instanceof BooleanSetting && s.getName().startsWith("Type ")) {
                 typeCount++;
             }
@@ -2090,6 +2185,7 @@ public class MeoRayClickGUI extends Screen {
         java.util.List<NumberSetting> nums = new java.util.ArrayList<>();
         java.util.List<ModeSetting> modes = new java.util.ArrayList<>();
         for (Setting<?> s : settings) {
+            if (!s.isVisible()) continue;
             if (s instanceof BooleanSetting bs) {
                 if (isParticles && bs.getName().startsWith("Type ")) {
                     typeSettings.add(bs);
@@ -2198,6 +2294,46 @@ public class MeoRayClickGUI extends Screen {
                     }
                 }
             }
+            curY += SETTING_BTN_H + SETTING_GAP;
+        }
+
+        // === Group settings click ===
+        java.util.List<GroupSetting> groups = new java.util.ArrayList<>();
+        for (Setting<?> s : settings) {
+            if (!s.isVisible()) continue;
+            if (s instanceof GroupSetting gs) groups.add(gs);
+        }
+        for (GroupSetting gs : groups) {
+            // Click on header → toggle dropdown
+            if (ly >= curY && ly <= curY + SETTING_BTN_H && lx >= sx && lx <= sx + settingW) {
+                String key = mod.getName() + "|grp|" + gs.getName();
+                AnimatedFloat anim = groupDropdownAnims.computeIfAbsent(key, k -> new AnimatedFloat(0f));
+                float current = anim.getValue();
+                float target = current > 0.5f ? 0f : 1f;
+                anim.snapTo(current);
+                anim.animate(target, 220L, Easing.EASE_OUT_CUBIC);
+                return true;
+            }
+
+            // Click on item in expanded list
+            String key = mod.getName() + "|grp|" + gs.getName();
+            AnimatedFloat anim = groupDropdownAnims.get(key);
+            if (anim != null && anim.getValue() > 0.1f) {
+                float itemH = SETTING_BTN_H;
+                float listY = curY + SETTING_BTN_H + 3;
+                int idx = 0;
+                for (var e : gs.getOptions().entrySet()) {
+                    float iy = listY + idx * (itemH + 2);
+                    if (lx >= sx && lx <= sx + settingW && ly >= iy && ly <= iy + itemH) {
+                        gs.toggle(e.getKey());
+                        return true;
+                    }
+                    idx++;
+                }
+                // Сдвигаем curY на высоту раскрытого списка
+                curY += gs.getOptions().size() * (itemH + 2);
+            }
+
             curY += SETTING_BTN_H + SETTING_GAP;
         }
 
@@ -2875,6 +3011,143 @@ public class MeoRayClickGUI extends Screen {
     private static int alphaBlend(int color, float factor, int maxAlpha) {
         int a = Math.min(maxAlpha, Math.max(0, (int) (factor * maxAlpha)));
         return (color & 0x00FFFFFF) | (a << 24);
+    }
+
+    private void renderGroupCell(Matrix4f matrix, float cellX, float cellY, float cellW,
+                               Module mod, GroupSetting gs, float lockAlpha, float open,
+                               Theme theme, MsdfFont medium, float lx, float ly) {
+        String key = mod.getName() + "|grp|" + gs.getName();
+        AnimatedFloat anim = groupDropdownAnims.computeIfAbsent(key, k -> new AnimatedFloat(0f));
+        float progress = anim.getValue();
+
+        // === Trigger row ===
+        int bgCol = alphaBlend(SETTING_BTN_BG, open, (int)(255 * lockAlpha));
+        ((BuiltRectangle) Builder.rectangle()
+            .size(new SizeState(cellW, SETTING_BTN_H))
+            .color(new QuadColorState(bgCol))
+            .radius(new QuadRadiusState(SETTING_BTN_RADIUS))
+            .smoothness(1.15F)
+            .build()).render(matrix, cellX, cellY);
+
+        int borderCol = alphaBlend(SETTING_BTN_BORDER_COL, open, (int)(180 * lockAlpha));
+        ((BuiltBorder) Builder.border()
+            .size(new SizeState(cellW, SETTING_BTN_H))
+            .color(new QuadColorState(borderCol))
+            .radius(new QuadRadiusState(SETTING_BTN_RADIUS))
+            .thickness(0.022F)
+            .smoothness(0.65F, 0.65F)
+            .build()).render(matrix, cellX, cellY);
+
+        // Group name (left)
+        int nameCol = alphaBlend(theme.textPrimary(), open, (int)(220 * lockAlpha));
+        ((BuiltText) Builder.text()
+            .font(medium).text(gs.getName())
+            .color(nameCol).size(5.5F).thickness(0.04F)
+            .build()).render(matrix, cellX + 8, cellY + (SETTING_BTN_H - 5.5F) / 2f);
+
+        // Display value (right, before arrow)
+        String displayVal = gs.getDisplayValue();
+        float displayW = medium.getWidth(displayVal, 5.0F);
+        int displayCol = alphaBlend(0xFFAAAAAA, open, (int)(220 * lockAlpha));
+        float arrowSize = 5.0F;
+        float arrowW = medium.getWidth("\u25BC", arrowSize);
+        float padR = 8;
+        float displayX = cellX + cellW - padR - arrowW - 4 - displayW;
+        ((BuiltText) Builder.text()
+            .font(medium).text(displayVal)
+            .color(displayCol).size(5.0F).thickness(0.04F)
+            .build()).render(matrix, displayX, cellY + (SETTING_BTN_H - 5.0F) / 2f);
+
+        // Arrow
+        String arrow = progress > 0.5f ? "\u25B2" : "\u25BC";
+        int arrowCol = alphaBlend(theme.accent(), open, (int)(220 * lockAlpha));
+        ((BuiltText) Builder.text()
+            .font(medium).text(arrow)
+            .color(arrowCol).size(arrowSize).thickness(0.04F)
+            .build()).render(matrix, cellX + cellW - padR - arrowW, cellY + (SETTING_BTN_H - arrowSize) / 2f);
+
+        // === Expanded list ===
+        if (progress < 0.01f) return;
+
+        float itemH = SETTING_BTN_H;
+        float listY = cellY + SETTING_BTN_H + 3;
+        float listH = gs.getOptions().size() * (itemH + 2) * progress;
+
+        // Список фон
+        int listBg = alphaBlend(CARD_BODY_BG, open, (int)(255 * progress));
+        ((BuiltRectangle) Builder.rectangle()
+            .size(new SizeState(cellW, listH))
+            .color(new QuadColorState(listBg))
+            .radius(new QuadRadiusState(SETTING_BTN_RADIUS))
+            .smoothness(1.15F)
+            .build()).render(matrix, cellX, listY);
+
+        int idx = 0;
+        for (var e : gs.getOptions().entrySet()) {
+            float itemAlpha = (progress * gs.getOptions().size() - idx) / gs.getOptions().size() * 2f;
+            itemAlpha = Math.max(0, Math.min(1, itemAlpha * 2f));
+
+            float iy = listY + idx * (itemH + 2);
+            if (iy - listY > listH) break;
+
+            String optName = e.getKey();
+            boolean val = e.getValue();
+
+            // Item background при ховере
+            boolean hover = lx >= cellX && lx <= cellX + cellW && ly >= iy && ly <= iy + itemH;
+            if (hover) {
+                int hoverBg = alphaBlend(0x18FFFFFF, open, (int)(255 * itemAlpha));
+                ((BuiltRectangle) Builder.rectangle()
+                    .size(new SizeState(cellW - 4, itemH))
+                    .color(new QuadColorState(hoverBg))
+                    .radius(new QuadRadiusState(SETTING_BTN_RADIUS - 2))
+                    .smoothness(1.15F)
+                    .build()).render(matrix, cellX + 2, iy);
+            }
+
+            // Name
+            int itemNameCol = alphaBlend(val ? 0xFFFFFFFF : 0xFF888896, open, (int)(255 * itemAlpha));
+            ((BuiltText) Builder.text()
+                .font(medium).text(optName)
+                .color(itemNameCol).size(5.5F).thickness(0.04F)
+                .build()).render(matrix, cellX + 10, iy + (itemH - 5.5F) / 2f);
+
+            // Checkbox (right)
+            float cbSize = 10f;
+            float cbX = cellX + cellW - cbSize - 10;
+            float cbY = iy + (itemH - cbSize) / 2f;
+
+            int cbBg = val
+                ? alphaBlend(SETTING_BTN_ACTIVE_COL, open, (int)(255 * itemAlpha))
+                : alphaBlend(0xFF1A1A1F, open, (int)(255 * itemAlpha));
+            ((BuiltRectangle) Builder.rectangle()
+                .size(new SizeState(cbSize, cbSize))
+                .color(new QuadColorState(cbBg))
+                .radius(new QuadRadiusState(2.5f))
+                .smoothness(1.15F)
+                .build()).render(matrix, cbX, cbY);
+
+            if (!val) {
+                int cbBorder = alphaBlend(SETTING_BTN_BORDER_COL, open, (int)(200 * itemAlpha));
+                ((BuiltBorder) Builder.border()
+                    .size(new SizeState(cbSize, cbSize))
+                    .color(new QuadColorState(cbBorder))
+                    .radius(new QuadRadiusState(2.5f))
+                    .thickness(0.022F)
+                    .smoothness(0.65F, 0.65F)
+                    .build()).render(matrix, cbX, cbY);
+            }
+
+            if (val) {
+                int checkCol = alphaBlend(0xFFFFFFFF, open, (int)(255 * itemAlpha));
+                ((BuiltText) Builder.text()
+                    .font(medium).text("\u2713")
+                    .color(checkCol).size(5.5f).thickness(0.06F)
+                    .build()).render(matrix, cbX + 2.2f, cbY + 2.2f);
+            }
+
+            idx++;
+        }
     }
 
 }

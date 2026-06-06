@@ -20,6 +20,7 @@ import org.joml.Matrix4f;
 
 @Environment(EnvType.CLIENT)
 public record BuiltBlur(SizeState size, QuadRadiusState radius, QuadColorState color, float blurRadius, float smoothness) implements IRenderer {
+    private static final Tessellator TESS = new Tessellator(512);
     private static final ShaderProgramKey BLUR_SHADER_KEY = new ShaderProgramKey(
         ResourceProvider.getShaderIdentifier("blur"),
         VertexFormats.POSITION_COLOR,
@@ -40,7 +41,7 @@ public record BuiltBlur(SizeState size, QuadRadiusState radius, QuadColorState c
         shader.getUniform("Smoothness").set(this.smoothness);
         shader.getUniform("BlurRadius").set(this.blurRadius);
 
-        BufferBuilder builder = Tessellator.getInstance().begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_COLOR);
+        BufferBuilder builder = TESS.begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_COLOR);
         builder.vertex(matrix, x, y, z).color(this.color.color1());
         builder.vertex(matrix, x, y + height, z).color(this.color.color2());
         builder.vertex(matrix, x + width, y + height, z).color(this.color.color3());

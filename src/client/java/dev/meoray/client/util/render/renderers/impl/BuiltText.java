@@ -17,6 +17,7 @@ import net.minecraft.client.render.VertexFormats;
 import org.joml.Matrix4f;
 
 public record BuiltText(MsdfFont font, String text, float size, float thickness, int color, float smoothness, float spacing, int outlineColor, float outlineThickness, boolean gradient, boolean gradientAlpha, double alpha) implements IRenderer {
+    private static final Tessellator TESS = new Tessellator(4096);
     private static final ShaderProgramKey MSDF_FONT_SHADER_KEY = new ShaderProgramKey(
         ResourceProvider.getShaderIdentifier("msdf_font"),
         VertexFormats.POSITION_TEXTURE_COLOR,
@@ -41,7 +42,7 @@ public record BuiltText(MsdfFont font, String text, float size, float thickness,
             shader.getUniform("OutlineColor").set(outlineComponents[0], outlineComponents[1], outlineComponents[2], outlineComponents[3]);
         }
 
-        BufferBuilder builder = Tessellator.getInstance().begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_TEXTURE_COLOR);
+        BufferBuilder builder = TESS.begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_TEXTURE_COLOR);
         this.font.applyGlyphs(matrix, builder, this.text, this.size, (this.thickness + this.outlineThickness * 0.5F) * 0.5F * this.size, this.spacing, x, y + this.font.getMetrics().baselineHeight() * this.size, z, this.color, this.gradient, this.gradientAlpha, this.alpha);
         BuiltBuffer builtBuffer = builder.endNullable();
         if (builtBuffer != null) {

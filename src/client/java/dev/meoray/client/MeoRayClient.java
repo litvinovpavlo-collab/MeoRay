@@ -3,12 +3,17 @@ package dev.meoray.client;
 import dev.meoray.client.account.AccountManager;
 import dev.meoray.client.core.ModuleManager;
 import dev.meoray.client.managers.ConfigManager;
+import dev.meoray.client.managers.FriendManager;
 import dev.meoray.client.gui.screen.MeoRayClickGUI;
 //import dev.nova.client.gui.ClickGUI;
 import dev.meoray.client.gui.theme.ThemeManager;
 import dev.meoray.client.hud.CoordsHUD;
 import dev.meoray.client.hud.HudElement;
 import dev.meoray.client.hud.InfoHUD;
+import dev.meoray.client.hud.InventoryHUD;
+import dev.meoray.client.hud.KeyListHUD;
+import dev.meoray.client.hud.PotionsHUD;
+import dev.meoray.client.hud.TargetHUD;
 import dev.meoray.client.hud.draggable.DraggableManager;
 import dev.meoray.client.util.MeoRayRPC;
 import dev.meoray.client.util.MeoRayRPCUpdater;
@@ -20,7 +25,7 @@ import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;
 import net.fabricmc.fabric.api.client.rendering.v1.WorldRenderEvents;
 import dev.meoray.client.core.Module;
 import dev.meoray.client.feature.render.ESP;
-import dev.meoray.client.feature.render.ESP3D;
+import dev.meoray.client.feature.render.HitEffect;
 import net.minecraft.client.option.KeyBinding;
 import net.minecraft.client.util.InputUtil;
 import org.lwjgl.glfw.GLFW;
@@ -41,6 +46,11 @@ public class MeoRayClient implements ClientModInitializer {
     private MeoRayClickGUI clickGUI;
     private final InfoHUD infoHUD = new InfoHUD();
     private final CoordsHUD coordsHUD = new CoordsHUD();
+    private final PotionsHUD potionsHUD = new PotionsHUD();
+    private final InventoryHUD inventoryHUD = new InventoryHUD();
+    private final FriendManager friendManager = new FriendManager();
+    private final TargetHUD targetHUD = new TargetHUD();
+    private final KeyListHUD keyListHUD = new KeyListHUD();
     private KeyBinding toggleKey;
     private final BitSet prevKeys = new BitSet(256);
     private int saveTimer = 0;
@@ -55,6 +65,10 @@ public class MeoRayClient implements ClientModInitializer {
         moduleManager.init();
         draggableManager.add(infoHUD);
         draggableManager.add(coordsHUD);
+        draggableManager.add(potionsHUD);
+        draggableManager.add(inventoryHUD);
+        draggableManager.add(targetHUD);
+        draggableManager.add(keyListHUD);
         MeoRayRPC.start();
 
         configManager = new ConfigManager(moduleManager, draggableManager, themeManager);
@@ -94,6 +108,10 @@ public class MeoRayClient implements ClientModInitializer {
             int accentRgb = themeManager.getRenderTheme().accent() & 0x00FFFFFF;
             dev.meoray.client.util.render.SkyConfig.setBaseColorRgb(accentRgb);
             moduleManager.onTick();
+            Module heMod = moduleManager.getByName("HitEffect");
+            if (heMod != null && heMod.isEnabled() && heMod instanceof HitEffect he) {
+                he.tick();
+            }
             WindowTitleAnimator.tick();
             MeoRayRPCUpdater.tick();
 
@@ -108,10 +126,21 @@ public class MeoRayClient implements ClientModInitializer {
             Module iface = moduleManager.getByName("Interface");
             boolean wmOn = false;
             boolean coordsOn = false;
+            boolean potionsOn = false;
+            boolean invOn = false;
+            boolean targetOn = false;
+            boolean keyListOn = false;
+
             if (iface != null && iface.isEnabled()) {
                 for (dev.meoray.client.core.setting.Setting<?> s : iface.getSettings()) {
-                    if (s.getName().equals("Watermark")) wmOn = (boolean) s.getValue();
-                    if (s.getName().equals("Coordinates")) coordsOn = (boolean) s.getValue();
+                    switch (s.getName()) {
+                        case "Watermark" -> wmOn = (boolean) s.getValue();
+                        case "Coordinates" -> coordsOn = (boolean) s.getValue();
+                        case "Potions" -> potionsOn = (boolean) s.getValue();
+                        case "InventoryHUD" -> invOn = (boolean) s.getValue();
+                        case "TargetHUD" -> targetOn = (boolean) s.getValue();
+                        case "KeyList" -> keyListOn = (boolean) s.getValue();
+                    }
                 }
             }
 
@@ -136,6 +165,16 @@ public class MeoRayClient implements ClientModInitializer {
             context.getMatrices().scale(ms, ms, 1.0f);
             if (wmOn) infoHUD.render(context);
             if (coordsOn) coordsHUD.render(context);
+            if (potionsOn) potionsHUD.render(context);
+            if (invOn) inventoryHUD.render(context);
+            if (targetOn) targetHUD.render(context);
+            if (keyListOn) keyListHUD.render(context);
+
+            Module arrows = moduleManager.getByName("Arrows");
+            if (arrows instanceof dev.meoray.client.feature.render.Arrows a) {
+                try { context.draw(); a.render(context); context.draw(); } catch (Throwable ignored) {}
+            }
+
             context.getMatrices().pop();
         });
 
@@ -143,18 +182,27 @@ public class MeoRayClient implements ClientModInitializer {
             float tickDelta = tickDeltaManager.getTickDelta(false);
             Module esp = INSTANCE.moduleManager.getByName("ESP");
             if (esp != null && esp.isEnabled() && esp instanceof ESP espModule) {
-                espModule.onRender2D(ctx, tickDelta);
+                try { ctx.draw(); espModule.onRender2D(ctx, tickDelta); ctx.draw(); } catch (Throwable ignored) {}
             }
         });
 
         WorldRenderEvents.AFTER_TRANSLUCENT.register(context -> {
-            Module esp3d = INSTANCE.moduleManager.getByName("ESP3D");
-            if (esp3d != null && esp3d.isEnabled() && esp3d instanceof ESP3D esp3dModule) {
-                esp3dModule.onWorldRender(context.matrixStack(), context.tickCounter().getTickDelta(false));
+            Module esp = INSTANCE.moduleManager.getByName("ESP");
+            if (esp != null && esp.isEnabled() && esp instanceof ESP espModule) {
+                espModule.onWorldRender(context.matrixStack(), context.tickCounter().getTickDelta(false));
+            }
+
+            Module he = INSTANCE.moduleManager.getByName("HitEffect");
+            if (he != null && he.isEnabled() && he instanceof HitEffect heMod) {
+                heMod.onWorldRender(context.matrixStack(), context.tickCounter().getTickDelta(false));
             }
         });
 
         System.out.println("MeoRay client initialized");
+    }
+
+    public FriendManager getFriendManager() {
+        return friendManager;
     }
 
     public ThemeManager getThemeManager() {
@@ -213,4 +261,5 @@ public class MeoRayClient implements ClientModInitializer {
             }
         }
     }
+
 }

@@ -20,6 +20,7 @@ import org.joml.Matrix4f;
 
 @Environment(EnvType.CLIENT)
 public record BuiltGlowTexture(SizeState size, QuadRadiusState radius, QuadColorState color, float smoothness, float u, float v, float texWidth, float texHeight) implements IRenderer {
+   private static final Tessellator TESS = new Tessellator(4096);
    private static final ShaderProgramKey TEXTURE_SHADER_KEY = new ShaderProgramKey(
        ResourceProvider.getShaderIdentifier("texture"),
        VertexFormats.POSITION_TEXTURE_COLOR,
@@ -58,7 +59,7 @@ public record BuiltGlowTexture(SizeState size, QuadRadiusState radius, QuadColor
          float alpha = (1.0F - (float)pass / 7.0F) * 0.35F;
          int glowAlpha = (int)(alpha * 255.0F);
          int glowColor = glowAlpha << 24 | 16777215;
-         BufferBuilder glowBuilder = Tessellator.getInstance().begin(DrawMode.QUADS, VertexFormats.POSITION_TEXTURE_COLOR);
+          BufferBuilder glowBuilder = TESS.begin(DrawMode.QUADS, VertexFormats.POSITION_TEXTURE_COLOR);
 
          for (int i = 0; i < 4; ++i) {
             float dx = vx[i] - cx;
@@ -72,7 +73,7 @@ public record BuiltGlowTexture(SizeState size, QuadRadiusState radius, QuadColor
          BufferRenderer.drawWithGlobalProgram(glowBuilder.end());
       }
 
-      BufferBuilder builder = Tessellator.getInstance().begin(DrawMode.QUADS, VertexFormats.POSITION_TEXTURE_COLOR);
+       BufferBuilder builder = TESS.begin(DrawMode.QUADS, VertexFormats.POSITION_TEXTURE_COLOR);
       for (int i = 0; i < 4; ++i) {
          builder.vertex(matrix, vx[i], vy[i], z).texture(uvs[i][0], uvs[i][1]).color(colors[i]);
       }

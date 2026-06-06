@@ -20,6 +20,7 @@ import org.joml.Matrix4f;
 
 @Environment(EnvType.CLIENT)
 public record BuiltTexture(SizeState size, QuadRadiusState radius, QuadColorState color, float smoothness) implements IRenderer {
+    private static final Tessellator TESS = new Tessellator(512);
     private static final ShaderProgramKey TEXTURE_SHADER_KEY = new ShaderProgramKey(
         ResourceProvider.getShaderIdentifier("texture"),
         VertexFormats.POSITION_TEXTURE_COLOR,
@@ -40,7 +41,7 @@ public record BuiltTexture(SizeState size, QuadRadiusState radius, QuadColorStat
         shader.getUniform("Smoothness").set(this.smoothness);
 
         float u1 = 0.0f, u2 = 1.0f, v1 = 0.0f, v2 = 1.0f;
-        BufferBuilder builder = Tessellator.getInstance().begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_TEXTURE_COLOR);
+        BufferBuilder builder = TESS.begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_TEXTURE_COLOR);
         builder.vertex(matrix, x, y, z).texture(u1, v1).color(this.color.color1());
         builder.vertex(matrix, x, y + height, z).texture(u1, v2).color(this.color.color2());
         builder.vertex(matrix, x + width, y + height, z).texture(u2, v2).color(this.color.color3());
