@@ -22,6 +22,7 @@ public class ModuleManager {
         register(new NoSlow());
         register(new NoFall());
         register(new ESP());
+        register(new ESP3D());
         register(new ChinaHat());
         register(new TargetHUD());
         register(new NoRender());
