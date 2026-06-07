@@ -5,6 +5,7 @@ import dev.meoray.client.core.Category;
 import dev.meoray.client.core.Module;
 import dev.meoray.client.core.setting.BooleanSetting;
 import dev.meoray.client.core.setting.NumberSetting;
+import dev.meoray.client.core.setting.SectionSetting;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.network.OtherClientPlayerEntity;
 import net.minecraft.client.world.ClientWorld;
@@ -18,13 +19,13 @@ import java.util.UUID;
 
 public class FakePlayer extends Module {
 
-    public final NumberSetting health = add(new NumberSetting("Health", 20.0, 1.0, 100.0, 1.0));
-    public final BooleanSetting copyInventory = add(new BooleanSetting("Copy Inventory", true));
-    public final BooleanSetting nameAsYou = add(new BooleanSetting("Use Your Name", true));
-    public final BooleanSetting persist = add(new BooleanSetting("Persist", true));
+    public final SectionSetting optionsSection = add(new SectionSetting("Options"));
+    public final NumberSetting health = optionsSection.add(new NumberSetting("Health", 20.0, 1.0, 100.0, 1.0));
+    public final BooleanSetting copyInventory = optionsSection.add(new BooleanSetting("Copy Inventory", true));
+    public final BooleanSetting nameAsYou = optionsSection.add(new BooleanSetting("Use Your Name", true));
+    public final BooleanSetting persist = optionsSection.add(new BooleanSetting("Persist", true));
 
     private static FakePlayer INSTANCE;
-
     private final List<OtherClientPlayerEntity> spawned = new ArrayList<>();
 
     public static boolean isFake(net.minecraft.entity.Entity entity) {
@@ -39,50 +40,31 @@ public class FakePlayer extends Module {
     }
 
     @Override
-    protected void onEnable() {
-        spawn();
-    }
+    protected void onEnable() { spawn(); }
 
     @Override
-    protected void onDisable() {
-        removeAll();
-    }
+    protected void onDisable() { removeAll(); }
 
     public void spawn() {
         MinecraftClient mc = MinecraftClient.getInstance();
         if (mc.player == null || mc.world == null) return;
-
         ClientWorld world = mc.world;
-
         String name = nameAsYou.getValue()
             ? mc.player.getGameProfile().getName()
             : "FakePlayer_" + (spawned.size() + 1);
-
         GameProfile profile = new GameProfile(UUID.randomUUID(), name);
-
         OtherClientPlayerEntity fake = new OtherClientPlayerEntity(world, profile);
-
-        fake.refreshPositionAndAngles(
-            mc.player.getX(),
-            mc.player.getY(),
-            mc.player.getZ(),
-            mc.player.getYaw(),
-            mc.player.getPitch()
-        );
+        fake.refreshPositionAndAngles(mc.player.getX(), mc.player.getY(), mc.player.getZ(),
+            mc.player.getYaw(), mc.player.getPitch());
         fake.headYaw = mc.player.headYaw;
         fake.bodyYaw = mc.player.bodyYaw;
         fake.prevYaw = mc.player.getYaw();
         fake.prevPitch = mc.player.getPitch();
-
         try {
             var hpAttr = fake.getAttributeInstance(EntityAttributes.MAX_HEALTH);
             if (hpAttr != null) hpAttr.setBaseValue(health.getValue().floatValue());
         } catch (Throwable ignored) {}
-
-        try {
-            fake.setHealth(health.getValue().floatValue());
-        } catch (Throwable ignored) {}
-
+        try { fake.setHealth(health.getValue().floatValue()); } catch (Throwable ignored) {}
         if (copyInventory.getValue()) {
             try {
                 fake.equipStack(EquipmentSlot.MAINHAND, mc.player.getMainHandStack().copy());
@@ -93,7 +75,6 @@ public class FakePlayer extends Module {
                 fake.equipStack(EquipmentSlot.FEET, mc.player.getEquippedStack(EquipmentSlot.FEET).copy());
             } catch (Throwable ignored) {}
         }
-
         try {
             world.addEntity(fake);
             spawned.add(fake);
@@ -115,9 +96,7 @@ public class FakePlayer extends Module {
 
     public void removeAll() {
         for (OtherClientPlayerEntity p : spawned) {
-            try {
-                p.setRemoved(net.minecraft.entity.Entity.RemovalReason.DISCARDED);
-            } catch (Throwable ignored) {}
+            try { p.setRemoved(net.minecraft.entity.Entity.RemovalReason.DISCARDED); } catch (Throwable ignored) {}
         }
         spawned.clear();
     }
@@ -127,9 +106,7 @@ public class FakePlayer extends Module {
         if (!isEnabled()) return;
         MinecraftClient mc = MinecraftClient.getInstance();
         if (mc.player == null || mc.world == null) return;
-
         spawned.removeIf(p -> p.isRemoved() || !p.isAlive());
-
         for (OtherClientPlayerEntity p : spawned) {
             try {
                 if (p.getHealth() < health.getValue().floatValue() * 0.5f) {

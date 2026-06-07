@@ -25,6 +25,7 @@ public class ModuleManager {
         register(new NoFall());
         register(new ESP());
         register(new ChinaHat());
+        register(new JumpCircles());
         register(new TargetHUD());
         register(new NoRender());
         register(new BetterWorld());

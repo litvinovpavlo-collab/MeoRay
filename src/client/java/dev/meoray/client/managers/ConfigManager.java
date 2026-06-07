@@ -7,6 +7,7 @@ import dev.meoray.client.core.ModuleManager;
 import dev.meoray.client.core.setting.BooleanSetting;
 import dev.meoray.client.core.setting.ModeSetting;
 import dev.meoray.client.core.setting.NumberSetting;
+import dev.meoray.client.core.setting.ColorSetting;
 import dev.meoray.client.core.setting.Setting;
 import dev.meoray.client.gui.screen.MeoRayClickGUI;
 import dev.meoray.client.gui.theme.Theme;
@@ -115,6 +116,9 @@ public class ConfigManager {
         if (s instanceof BooleanSetting bs) return new JsonPrimitive(bs.getValue());
         if (s instanceof NumberSetting ns) return new JsonPrimitive(ns.getValue());
         if (s instanceof ModeSetting ms) return new JsonPrimitive(ms.getValue());
+        if (s instanceof ColorSetting cs) {
+            return new JsonPrimitive(cs.getValue().getRGB());
+        }
         return null;
     }
 
@@ -123,6 +127,10 @@ public class ConfigManager {
             if (s instanceof BooleanSetting bs) bs.setValue(el.getAsBoolean());
             else if (s instanceof NumberSetting ns) ns.setValue(el.getAsDouble());
             else if (s instanceof ModeSetting ms) ms.setValue(el.getAsString());
+            else if (s instanceof ColorSetting cs) {
+                int rgb = el.getAsInt();
+                cs.setValue(new java.awt.Color(rgb, true));
+            }
         } catch (Exception e) {
             System.err.println("[ConfigManager] Error deserializing setting '" + s.getName() + "': " + e.getMessage());
         }

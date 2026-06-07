@@ -5,9 +5,9 @@ import dev.meoray.client.core.Module;
 import dev.meoray.client.core.setting.BooleanSetting;
 import dev.meoray.client.core.setting.ModeSetting;
 import dev.meoray.client.core.setting.NumberSetting;
+import dev.meoray.client.core.setting.SectionSetting;
 import dev.meoray.client.rotation.NeuroRotation;
 import dev.meoray.client.rotation.Rotation;
-import dev.meoray.client.hud.TargetHUD;
 import dev.meoray.client.util.CombatUtil;
 import dev.meoray.client.util.RotationUtil;
 import dev.meoray.client.util.TPSUtil;
@@ -30,53 +30,50 @@ public class AttackAura extends Module {
     private final MinecraftClient mc = MinecraftClient.getInstance();
     private final Random random = new Random();
 
-    // === SERVER PRESET (САМАЯ ВЕРХНЯЯ НАСТРОЙКА) ===
+    // === SERVER PRESET (верхний уровень — не в секции) ===
     public final ModeSetting serverPreset = add(new ModeSetting("Server Preset", "Custom",
             "Custom", "Funtime", "Spookytime", "ReallyWorld", "Holyworld"));
 
-    // === DISTANCE ===
-    public final NumberSetting distance = add(new NumberSetting("Distance", 4.0, 1.0, 6.0, 0.1));
-    public final NumberSetting additionalDistance = add(new NumberSetting("Additional Distance", 2.0, 0.0, 6.0, 0.1));
+    // === SECTION: TARGETS ===
+    public final SectionSetting targetsSection = add(new SectionSetting("Targets"));
+    public final BooleanSetting targetPlayers = targetsSection.add(new BooleanSetting("Players", true));
+    public final BooleanSetting targetMobs = targetsSection.add(new BooleanSetting("Mobs", false));
+    public final BooleanSetting targetAnimals = targetsSection.add(new BooleanSetting("Animals", false));
+    public final BooleanSetting targetInvisible = targetsSection.add(new BooleanSetting("Invisible", false));
+    public final ModeSetting sorting = targetsSection.add(new ModeSetting("Sorting", "Distance",
+            "Distance", "Health", "Armor", "Angle"));
 
-    // === TARGETS ===
-    public final BooleanSetting targetPlayers = add(new BooleanSetting("Target Players", true));
-    public final BooleanSetting targetMobs = add(new BooleanSetting("Target Mobs", false));
-    public final BooleanSetting targetAnimals = add(new BooleanSetting("Target Animals", false));
-    public final BooleanSetting targetInvisible = add(new BooleanSetting("Target Invisible", false));
+    // === SECTION: COMBAT ===
+    public final SectionSetting combatSection = add(new SectionSetting("Combat"));
+    public final NumberSetting distance = combatSection.add(new NumberSetting("Distance", 4.0, 1.0, 6.0, 0.1));
+    public final NumberSetting additionalDistance = combatSection.add(new NumberSetting("Additional Distance", 2.0, 0.0, 6.0, 0.1));
+    public final NumberSetting accuracy = combatSection.add(new NumberSetting("Accuracy", 100, 1, 100, 1));
+    public final ModeSetting mode = combatSection.add(new ModeSetting("Mode", "Silent", "Rage", "Silent"));
+    public final ModeSetting attackMode = combatSection.add(new ModeSetting("Attack Mode", "1.9+", "1.9+", "Legacy"));
+    public final ModeSetting sprintReset = combatSection.add(new ModeSetting("Sprint Reset", "Packet",
+            "Packet", "Vanilla", "None"));
 
-    // === SORTING ===
-    public final ModeSetting sorting = add(new ModeSetting("Sorting", "Distance", "Distance", "Health", "Armor", "Angle"));
+    // === SECTION: ROTATION ===
+    public final SectionSetting rotationSection = add(new SectionSetting("Rotation"));
+    public final NumberSetting smoothness = rotationSection.add(new NumberSetting("Smoothness", 78, 40, 140, 5));
+    public final NumberSetting humanization = rotationSection.add(new NumberSetting("Randomization", 1.65, 0.5, 4.0, 0.1));
+    public final NumberSetting prediction = rotationSection.add(new NumberSetting("Prediction", 1.2, 0.0, 3.5, 0.05));
+    public final NumberSetting gcd = rotationSection.add(new NumberSetting("GCD", 0.5, 0.0, 1.0, 0.05));
+    public final ModeSetting correctionMode = rotationSection.add(new ModeSetting("Correction", "Focused",
+            "Focused", "Smooth", "None"));
 
-    // === MODE ===
-    public final ModeSetting mode = add(new ModeSetting("Mode", "Silent", "Rage", "Silent"));
-    public final ModeSetting attackMode = add(new ModeSetting("Attack Mode", "1.9+", "1.9+", "Legacy"));
-
-    // === ACCURACY ===
-    public final NumberSetting accuracy = add(new NumberSetting("Accuracy", 100, 1, 100, 1));
-
-    // === CORRECTION ===
-    public final ModeSetting correctionMode = add(new ModeSetting("Correction Mode", "Focused", "Focused", "Smooth", "None"));
-
-    // === SPRINT RESET ===
-    public final ModeSetting sprintReset = add(new ModeSetting("Sprint Reset", "Packet", "Packet", "Vanilla", "None"));
-
-    // === ROTATION TUNING ===
-    public final NumberSetting smoothness = add(new NumberSetting("Smoothness", 78, 40, 140, 5));
-    public final NumberSetting humanization = add(new NumberSetting("Randomization", 1.65, 0.5, 4.0, 0.1));
-    public final NumberSetting prediction = add(new NumberSetting("Prediction", 1.2, 0.0, 3.5, 0.05));
-    public final NumberSetting gcd = add(new NumberSetting("GCD", 0.5, 0.0, 1.0, 0.05));
-
-    // === BOOLEANS ===
-    public final BooleanSetting ignoreWhileUsing = add(new BooleanSetting("Ignore While Using", true));
-    public final BooleanSetting throughWalls = add(new BooleanSetting("Through Walls", false));
-    public final BooleanSetting onlyCriticals = add(new BooleanSetting("Only Criticals", false));
-    public final BooleanSetting smartCriticals = add(new BooleanSetting("Smart Criticals", true));
-    public final BooleanSetting jumpOnly = add(new BooleanSetting("Jump Only", false));
-    public final BooleanSetting swordOnly = add(new BooleanSetting("Sword Only", false));
-    public final BooleanSetting tpsSync = add(new BooleanSetting("TPS Sync", true));
-    public final BooleanSetting breakShield = add(new BooleanSetting("Break Shield", true));
-    public final BooleanSetting desyncShield = add(new BooleanSetting("Desync Shield", false));
-    public final BooleanSetting criticalEffect = add(new BooleanSetting("Critical Effect", false));
+    // === SECTION: BEHAVIOR ===
+    public final SectionSetting behaviorSection = add(new SectionSetting("Behavior"));
+    public final BooleanSetting ignoreWhileUsing = behaviorSection.add(new BooleanSetting("Ignore While Using", true));
+    public final BooleanSetting throughWalls = behaviorSection.add(new BooleanSetting("Through Walls", false));
+    public final BooleanSetting onlyCriticals = behaviorSection.add(new BooleanSetting("Only Criticals", false));
+    public final BooleanSetting smartCriticals = behaviorSection.add(new BooleanSetting("Smart Criticals", true));
+    public final BooleanSetting jumpOnly = behaviorSection.add(new BooleanSetting("Jump Only", false));
+    public final BooleanSetting swordOnly = behaviorSection.add(new BooleanSetting("Sword Only", false));
+    public final BooleanSetting tpsSync = behaviorSection.add(new BooleanSetting("TPS Sync", true));
+    public final BooleanSetting breakShield = behaviorSection.add(new BooleanSetting("Break Shield", true));
+    public final BooleanSetting desyncShield = behaviorSection.add(new BooleanSetting("Desync Shield", false));
+    public final BooleanSetting criticalEffect = behaviorSection.add(new BooleanSetting("Critical Effect", false));
 
     // === STATE ===
     private Entity target = null;
@@ -88,29 +85,25 @@ public class AttackAura extends Module {
         super("AttackAura", "Автоматически бьёт игроков", Category.COMBAT);
     }
 
-    /**
-     * Применяет настройки из выбранного пресета сервера
-     */
     private void applyPresetIfChanged() {
         String currentPreset = serverPreset.getValue();
         if (currentPreset.equals(lastPreset)) return;
         lastPreset = currentPreset;
-
         if (currentPreset.equals("Custom")) return;
 
         AuraPresets.Preset p = AuraPresets.getByName(currentPreset);
         if (p == null) return;
 
-        distance.setValue(Double.valueOf(p.distance));
-        additionalDistance.setValue(Double.valueOf(p.additionalDistance));
+        distance.setValue(p.distance);
+        additionalDistance.setValue(p.additionalDistance);
         mode.setValue(p.mode);
         attackMode.setValue(p.attackMode);
-        accuracy.setValue(Double.valueOf(p.accuracy));
+        accuracy.setValue((double) p.accuracy);
         sprintReset.setValue(p.sprintReset);
-        smoothness.setValue(Double.valueOf(p.smoothness));
-        humanization.setValue(Double.valueOf(p.humanization));
-        prediction.setValue(Double.valueOf(p.prediction));
-        gcd.setValue(Double.valueOf(p.gcd));
+        smoothness.setValue(p.smoothness);
+        humanization.setValue(p.humanization);
+        prediction.setValue(p.prediction);
+        gcd.setValue(p.gcd);
         smartCriticals.setValue(p.smartCriticals);
         onlyCriticals.setValue(p.onlyCriticals);
         tpsSync.setValue(p.tpsSync);
@@ -123,19 +116,10 @@ public class AttackAura extends Module {
     @Override
     public void onTick() {
         if (mc.player == null || mc.world == null) return;
-
-        // Проверяем не сменился ли пресет
         applyPresetIfChanged();
 
-        if (swordOnly.getValue() && !CombatUtil.isHoldingSword()) {
-            cleanup();
-            return;
-        }
-
-        if (ignoreWhileUsing.getValue() && CombatUtil.isUsingItem()) {
-            cleanup();
-            return;
-        }
+        if (swordOnly.getValue() && !CombatUtil.isHoldingSword()) { cleanup(); return; }
+        if (ignoreWhileUsing.getValue() && CombatUtil.isUsingItem()) { cleanup(); return; }
 
         neuro.setRotationMode(mode.getValue().equals("Rage") ? "Matrix" : "Neuro");
         neuro.setSmoothness(smoothness.getValue().floatValue());
@@ -144,15 +128,10 @@ public class AttackAura extends Module {
         neuro.setGCD(gcd.getValue().floatValue());
 
         target = findBestTarget();
-        if (target instanceof LivingEntity living) TargetHUD.setTarget(living);
-        if (target == null) {
-            cleanup();
-            return;
-        }
+        if (target == null) { cleanup(); return; }
 
         Rotation rot = neuro.update(target, "Body");
         applyRotation(rot);
-
         handleAttack();
     }
 
@@ -168,7 +147,6 @@ public class AttackAura extends Module {
 
     private void handleAttack() {
         if (mc.player == null || target == null) return;
-
         if (mc.player.distanceTo(target) > distance.getValue()) return;
 
         if (attackMode.getValue().equals("1.9+")) {
@@ -183,21 +161,15 @@ public class AttackAura extends Module {
         }
         if (System.currentTimeMillis() - lastAttackTime < minInterval) return;
 
-        // === КРИТЫ ===
         if (onlyCriticals.getValue()) {
             if (jumpOnly.getValue() && !mc.options.jumpKey.isPressed()) return;
-
             if (mc.player.isOnGround()) {
                 if (!jumpOnly.getValue()) mc.player.jump();
                 return;
             }
-
             if (!canCrit()) return;
-        }
-        else if (smartCriticals.getValue()) {
-            if (!mc.player.isOnGround() && mc.player.getVelocity().y > 0) {
-                return; // летим вверх — ждём
-            }
+        } else if (smartCriticals.getValue()) {
+            if (!mc.player.isOnGround() && mc.player.getVelocity().y > 0) return;
         }
 
         if (random.nextInt(100) >= accuracy.getValue().intValue()) return;
@@ -212,39 +184,24 @@ public class AttackAura extends Module {
 
     private boolean canCrit() {
         if (mc.player == null) return false;
-        return !mc.player.isOnGround()
-                && mc.player.getVelocity().y < 0
-                && !mc.player.isTouchingWater()
-                && !mc.player.isInLava()
-                && !mc.player.isClimbing()
-                && !mc.player.isRiding();
+        return !mc.player.isOnGround() && mc.player.getVelocity().y < 0
+                && !mc.player.isTouchingWater() && !mc.player.isInLava()
+                && !mc.player.isClimbing() && !mc.player.isRiding();
     }
 
     private void doSprintReset() {
         if (mc.player == null) return;
         switch (sprintReset.getValue()) {
-            case "Packet" -> {
-                if (mc.player.isSprinting()) {
-                    CombatUtil.sprintResetPacket();
-                    wasSprinting = true;
-                }
-            }
-            case "Vanilla" -> {
-                if (mc.player.isSprinting()) {
-                    CombatUtil.sprintResetVanilla();
-                    wasSprinting = true;
-                }
-            }
+            case "Packet" -> { if (mc.player.isSprinting()) { CombatUtil.sprintResetPacket(); wasSprinting = true; } }
+            case "Vanilla" -> { if (mc.player.isSprinting()) { CombatUtil.sprintResetVanilla(); wasSprinting = true; } }
         }
     }
 
     private void doAttack() {
         if (mc.interactionManager == null || target == null) return;
-
         mc.interactionManager.attackEntity(mc.player, target);
         mc.player.swingHand(Hand.MAIN_HAND);
         lastAttackTime = System.currentTimeMillis();
-
         if (wasSprinting && mc.options.sprintKey.isPressed()) {
             mc.player.setSprinting(true);
             wasSprinting = false;
@@ -254,22 +211,18 @@ public class AttackAura extends Module {
     private Entity findBestTarget() {
         List<LivingEntity> valid = new ArrayList<>();
         double searchRange = distance.getValue() + additionalDistance.getValue();
-
         for (Entity e : mc.world.getEntities()) {
             if (!(e instanceof LivingEntity living)) continue;
             if (!isValidTarget(living, searchRange)) continue;
             valid.add(living);
         }
-
         if (valid.isEmpty()) return null;
-
         Comparator<LivingEntity> comp = switch (sorting.getValue()) {
             case "Health" -> Comparator.comparingDouble(LivingEntity::getHealth);
-            case "Armor"  -> Comparator.comparingInt(LivingEntity::getArmor);
-            case "Angle"  -> Comparator.comparingDouble(e -> RotationUtil.getAngleTo(e));
-            default       -> Comparator.comparingDouble(e -> mc.player.distanceTo(e));
+            case "Armor" -> Comparator.comparingInt(LivingEntity::getArmor);
+            case "Angle" -> Comparator.comparingDouble(e -> RotationUtil.getAngleTo(e));
+            default -> Comparator.comparingDouble(e -> mc.player.distanceTo(e));
         };
-
         return valid.stream().min(comp).orElse(null);
     }
 
@@ -278,19 +231,15 @@ public class AttackAura extends Module {
         if (e == mc.player) return false;
         if (e.isDead() || e.getHealth() <= 0) return false;
         if (mc.player.distanceTo(e) > maxDist) return false;
-
         boolean isPlayer = e instanceof PlayerEntity;
         boolean isAnimal = e instanceof AnimalEntity;
         boolean isMob = e instanceof MobEntity && !isAnimal;
-
         if (isPlayer && !targetPlayers.getValue()) return false;
         if (isMob && !targetMobs.getValue()) return false;
         if (isAnimal && !targetAnimals.getValue()) return false;
         if (!isPlayer && !isMob && !isAnimal) return false;
-
         if (e.isInvisible() && !targetInvisible.getValue()) return false;
         if (!throughWalls.getValue() && !mc.player.canSee(e)) return false;
-
         return true;
     }
 
@@ -305,12 +254,10 @@ public class AttackAura extends Module {
         cleanup();
         lastAttackTime = 0;
         wasSprinting = false;
-        lastPreset = "Custom"; // сброс чтобы пресет применился заново
+        lastPreset = "Custom";
         TPSUtil.reset();
     }
 
     @Override
-    public void onDisable() {
-        cleanup();
-    }
+    public void onDisable() { cleanup(); }
 }

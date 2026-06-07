@@ -6,7 +6,9 @@ import dev.meoray.client.core.Module;
 import dev.meoray.client.core.setting.BooleanSetting;
 import dev.meoray.client.core.setting.GroupSetting;
 import dev.meoray.client.core.setting.ModeSetting;
+import dev.meoray.client.core.setting.SectionSetting;
 import dev.meoray.client.core.setting.NumberSetting;
+import dev.meoray.client.core.setting.ColorSetting;
 import dev.meoray.client.core.setting.Setting;
 import dev.meoray.client.gui.theme.Theme;
 import dev.meoray.client.gui.theme.ThemeManager;
@@ -85,6 +87,16 @@ public class MeoRayClickGUI extends Screen {
     private static final int KEYBIND_BG = 0xFF1A1A1A;
     private static final int KEYBIND_BORDER_COL = 0x33FFFFFF; // rgba(255,255,255,0.2)
     private static final int KEYBIND_BINDING_BORDER = 0xFFAB47BC;
+
+    // Slider row
+    private static final float SLIDER_ROW_H = 26f;
+    private static final float SLIDER_TRACK_H = 3.5f;
+    private static final float SLIDER_THUMB_R = 5.5f;
+
+    // Mini toggle (for group sub-options)
+    private static final float MINI_TOGGLE_W = 16f;
+    private static final float MINI_TOGGLE_H = 10f;
+    private static final float MINI_TOGGLE_KNOB = 6f;
 
     // Category hover animation
     private static final long CAT_HOVER_DUR_IN = 400;
@@ -167,8 +179,14 @@ public class MeoRayClickGUI extends Screen {
 
     private final SearchElement searchElement = new SearchElement();
     private final Map<String, Float> sliderAnimatedProgress = new HashMap<>();
-    private final Map<String, AnimatedFloat> modeDropdownAnims = new HashMap<>();
+
     private final Map<String, AnimatedFloat> groupDropdownAnims = new HashMap<>();
+    private final Map<String, AnimatedFloat> sectionAnims = new HashMap<>();
+    // === Color picker state ===
+    private String openColorPicker = null;
+    private boolean draggingHue = false;
+    private boolean draggingSV = false;
+    private String draggingColorKey = null;
     private final Map<String, Float> bodyScrollOffsets = new HashMap<>();
     private final Map<String, Float> bodyScrollMax = new HashMap<>();
     private String hoveredSliderKey;
@@ -280,6 +298,11 @@ public class MeoRayClickGUI extends Screen {
             renderBackgroundEffects(matrix, gxi, gyi);
             renderBottomBar(matrix, gxi, gyi, lx, ly, open, theme);
             renderContent(matrix, gxi, gyi, lx, ly, open, theme, delta, contentAlpha);
+
+            // === COLOR PICKER OVERLAY ===
+            if (openColorPicker != null) {
+                renderColorPickerOverlay(matrix, lx, ly, open, theme);
+            }
 
             drawTooltip(ctx, gxi, gyi, lx, ly, open, theme);
         } catch (Exception e) {
@@ -893,9 +916,17 @@ public class MeoRayClickGUI extends Screen {
         if (settings.isEmpty()) return 0f;
         float h = SETTING_PAD;
         h += KEYBIND_H + SETTING_GAP;
+
+        java.util.Set<Setting<?>> insideSections = new java.util.HashSet<>();
+        for (Setting<?> s : settings) {
+            if (s instanceof SectionSetting sec) insideSections.addAll(sec.getChildren());
+        }
+
         int boolCount = 0, numCount = 0, modeCount = 0;
         for (Setting<?> s : settings) {
             if (!s.isVisible()) continue;
+            if (insideSections.contains(s)) continue;
+            if (s instanceof SectionSetting) continue;
             if (mod.getName().equals("Particles") && s instanceof BooleanSetting && s.getName().startsWith("Type ")) continue;
             if (s instanceof NumberSetting) numCount++;
             else if (s instanceof BooleanSetting) boolCount++;
@@ -903,8 +934,17 @@ public class MeoRayClickGUI extends Screen {
         }
         int boolRows = (boolCount + 1) / 2;
         h += boolRows * (SETTING_BTN_H + SETTING_GAP);
-        h += numCount * (26f + SETTING_GAP);
+        h += numCount * (SLIDER_ROW_H + SETTING_GAP);
         h += modeCount * (SETTING_BTN_H + SETTING_GAP);
+
+        MsdfFont medium = FontManager.SUISSEINTMEDIUM.get();
+        for (Setting<?> s : settings) {
+            if (s instanceof SectionSetting sec && s.isVisible()) {
+                h += SETTING_BTN_H + SETTING_GAP;
+                h += computeSectionHeight(mod, sec, 0, medium);
+            }
+        }
+
         int groupCount = 0;
         float groupExpandedH = 0f;
         for (Setting<?> s : settings) {
@@ -935,6 +975,24 @@ public class MeoRayClickGUI extends Screen {
         }
         h += SETTING_PAD;
         return h;
+    }
+
+    private float computeSectionHeight(Module mod, SectionSetting sec, float settingW, MsdfFont medium) {
+        String key = mod.getName() + "|sec|" + sec.getName();
+        AnimatedFloat anim = sectionAnims.get(key);
+        float progress = anim != null ? anim.getValue() : 0f;
+        if (progress < 0.001f) return 0f;
+
+        float h = 0;
+        for (Setting<?> s : sec.getChildren()) {
+            if (!s.isVisible()) continue;
+            if (s instanceof BooleanSetting) h += SETTING_BTN_H + SETTING_GAP;
+            else if (s instanceof NumberSetting) h += SLIDER_ROW_H + SETTING_GAP;
+            else if (s instanceof ModeSetting) h += SETTING_BTN_H + SETTING_GAP;
+            else if (s instanceof ColorSetting) h += SETTING_BTN_H + SETTING_GAP;
+        }
+        h += 4;
+        return h * progress;
     }
 
     private void renderScrollbar(Matrix4f matrix, float x, float y, float w, float h, float scroll, float maxScroll, Theme theme, float open) {
@@ -1026,6 +1084,20 @@ public class MeoRayClickGUI extends Screen {
         float visibleStart = sy;
         float visibleEnd = sy + sh;
 
+        // === Собираем секции и исключаем их детей из общего списка ===
+        java.util.List<SectionSetting> sections = new java.util.ArrayList<>();
+        java.util.Set<Setting<?>> insideSections = new java.util.HashSet<>();
+        for (Setting<?> s : settings) {
+            if (!s.isVisible()) continue;
+            if (s instanceof SectionSetting sec) {
+                sections.add(sec);
+                insideSections.addAll(sec.getChildren());
+            }
+        }
+        bools.removeIf(insideSections::contains);
+        nums.removeIf(insideSections::contains);
+        modes.removeIf(insideSections::contains);
+
         // === Keybind picker (visually distinct, [ K ] format) ===
         boolean binding = keybindTarget != null && keybindTarget.equals(mod.getName());
         String keyName = mod.getKey() == 0 ? "NONE" : getKeyName(mod.getKey());
@@ -1068,7 +1140,7 @@ public class MeoRayClickGUI extends Screen {
         }
 
         // === Sliders: full width ===
-        float sliderH = 26f;
+        float sliderH = SLIDER_ROW_H;
         for (NumberSetting ns : nums) {
             if (curY + sliderH > visibleEnd) break;
             renderSliderCell(matrix, settingX, curY, settingW, mod, ns, lockAlpha, open, theme, medium, lx, ly);
@@ -1100,6 +1172,41 @@ public class MeoRayClickGUI extends Screen {
             float listH = gs.getOptions().size() * (itemH + 2) * p;
 
             curY += SETTING_BTN_H + SETTING_GAP + listH + (p > 0.01f ? 4 : 0);
+        }
+
+        // === SECTIONS (аккордеон) ===
+        for (SectionSetting sec : sections) {
+            if (curY + SETTING_BTN_H > visibleEnd) break;
+            renderSectionCell(matrix, settingX, curY, settingW, mod, sec, lockAlpha, open, theme, medium, lx, ly);
+            String key = mod.getName() + "|sec|" + sec.getName();
+            AnimatedFloat anim = sectionAnims.computeIfAbsent(key, k -> new AnimatedFloat(0f));
+            float p = anim.update();
+            curY += SETTING_BTN_H + SETTING_GAP;
+
+            if (p > 0.001f) {
+                float childY = curY;
+                for (Setting<?> cs : sec.getChildren()) {
+                    if (!cs.isVisible()) continue;
+                    float rowAlpha = p;
+                    com.mojang.blaze3d.systems.RenderSystem.setShaderColor(1f, 1f, 1f, open * rowAlpha);
+
+                    if (cs instanceof BooleanSetting bs) {
+                        renderBooleanCell(matrix, settingX + 8, childY, settingW - 8, mod, bs, lockAlpha, open, theme, medium, lx, ly);
+                        childY += SETTING_BTN_H + SETTING_GAP;
+                    } else if (cs instanceof NumberSetting ns) {
+                        renderSliderCell(matrix, settingX + 8, childY, settingW - 8, mod, ns, lockAlpha, open, theme, medium, lx, ly);
+                        childY += SLIDER_ROW_H + SETTING_GAP;
+                    } else if (cs instanceof ModeSetting ms) {
+                        renderModeCell(matrix, settingX + 8, childY, settingW - 8, mod, ms, lockAlpha, open, theme, medium, lx, ly);
+                        childY += SETTING_BTN_H + SETTING_GAP;
+                    } else if (cs instanceof ColorSetting colorS) {
+                        renderColorCell(matrix, settingX + 8, childY, settingW - 8, mod, colorS, lockAlpha, open, theme, medium, lx, ly);
+                        childY += SETTING_BTN_H + SETTING_GAP;
+                    }
+                }
+                com.mojang.blaze3d.systems.RenderSystem.setShaderColor(1f, 1f, 1f, 1f);
+                curY += (childY - curY) * p;
+            }
         }
 
         // === Particles type grid (special) ===
@@ -1193,39 +1300,39 @@ public class MeoRayClickGUI extends Screen {
             .color(txtCol).size(5.5F).thickness(0.04F)
             .build()).render(matrix, cellX + 8, cellY + (SETTING_BTN_H - 5.5F) / 2f);
 
-        // Checkbox (right)
-        float cbSize = 11f;
-        float cbX = cellX + cellW - cbSize - 7;
-        float cbY = cellY + (SETTING_BTN_H - cbSize) / 2f;
-        int cbBgCol = val
-            ? alphaBlend(SETTING_BTN_ACTIVE_COL, open, 255)
-            : alphaBlend(0xFF1A1A1F, open, 255);
+        // iOS-style toggle (right)
+        float togW = 20f;
+        float togH = 11f;
+        float togX = cellX + cellW - togW - 7;
+        float togY = cellY + (SETTING_BTN_H - togH) / 2f;
+        int toggleTrack = lerpColor(0xFF2A2A30, SETTING_BTN_ACTIVE_COL & 0x00FFFFFF | 0xE0000000, animVal);
+        toggleTrack = alphaBlend(toggleTrack, open, 255);
         ((BuiltRectangle) Builder.rectangle()
-            .size(new SizeState(cbSize, cbSize))
-            .color(new QuadColorState(cbBgCol))
-            .radius(new QuadRadiusState(3f))
+            .size(new SizeState(togW, togH))
+            .color(new QuadColorState(toggleTrack))
+            .radius(new QuadRadiusState(togH / 2f))
             .smoothness(1.15F)
-            .build()).render(matrix, cbX, cbY);
+            .build()).render(matrix, togX, togY);
 
-        if (!val) {
-            int cbBorderCol = alphaBlend(SETTING_BTN_BORDER_COL, open, 200);
-            ((BuiltBorder) Builder.border()
-                .size(new SizeState(cbSize, cbSize))
-                .color(new QuadColorState(cbBorderCol))
-                .radius(new QuadRadiusState(3f))
-                .thickness(0.022F)
-                .smoothness(0.65F, 0.65F)
-                .build()).render(matrix, cbX, cbY);
-        }
+        int togBorderCol = alphaBlend(0x33FFFFFF, open, 255);
+        ((BuiltBorder) Builder.border()
+            .size(new SizeState(togW, togH))
+            .color(new QuadColorState(togBorderCol))
+            .radius(new QuadRadiusState(togH / 2f))
+            .thickness(0.02F)
+            .smoothness(0.65F, 0.65F)
+            .build()).render(matrix, togX, togY);
 
-        if (animVal > 0.5f) {
-            float checkSize = 5.5f * animVal;
-            int checkCol = alphaBlend(0xFFFFFFFF, open, (int)(255 * animVal));
-            ((BuiltText) Builder.text()
-                .font(medium).text("\u2713")
-                .color(checkCol).size(checkSize + 1.0f).thickness(0.06F)
-                .build()).render(matrix, cbX + (cbSize - checkSize - 1.0f) / 2f - 0.5f, cbY + (cbSize - checkSize - 1.0f) / 2f - 0.5f);
-        }
+        float knobSize = 7f;
+        float knobX = togX + 2f + (togW - knobSize - 4f) * animVal;
+        float knobY = togY + (togH - knobSize) / 2f;
+        int knobCol = alphaBlend(0xFFFFFFFF, open, 255);
+        ((BuiltRectangle) Builder.rectangle()
+            .size(new SizeState(knobSize, knobSize))
+            .color(new QuadColorState(knobCol))
+            .radius(new QuadRadiusState(knobSize / 2f))
+            .smoothness(1.15F)
+            .build()).render(matrix, knobX, knobY);
     }
 
     private void renderSliderCell(Matrix4f matrix, float cellX, float cellY, float cellW, Module mod, NumberSetting ns, float lockAlpha, float open, Theme theme, MsdfFont medium, float lx, float ly) {
@@ -1242,7 +1349,7 @@ public class MeoRayClickGUI extends Screen {
         sliderAnimatedProgress.put(sliderKey, animProg);
 
         boolean sliderHovered = lockAlpha >= 0.5f && hoveredSliderKey != null && hoveredSliderKey.equals(sliderKey);
-        if (lockAlpha >= 0.5f && lx >= cellX && lx <= cellX + cellW && ly >= cellY && ly <= cellY + 26) {
+        if (lockAlpha >= 0.5f && lx >= cellX && lx <= cellX + cellW && ly >= cellY && ly <= cellY + SLIDER_ROW_H) {
             hoveredSliderKey = sliderKey;
         }
 
@@ -1263,7 +1370,7 @@ public class MeoRayClickGUI extends Screen {
             .build()).render(matrix, cellX + cellW - valW, cellY);
 
         // Track
-        float trackH = 3.5f;
+        float trackH = SLIDER_TRACK_H;
         float trackY = cellY + labelSize + 7;
         int trackBgCol = alphaBlend(0x26FFFFFF, open, (int)(255 * lockAlpha));
         ((BuiltRectangle) Builder.rectangle()
@@ -1286,7 +1393,7 @@ public class MeoRayClickGUI extends Screen {
         }
 
         // Thumb
-        float baseR = 5.5f;
+        float baseR = SLIDER_THUMB_R;
         float hoverR = 6.8f;
         float targetR = sliderHovered ? hoverR : baseR;
         // Smooth thumb radius via sliderAnimatedProgress? Use simple approach
@@ -1370,101 +1477,27 @@ public class MeoRayClickGUI extends Screen {
                 curBx += btnW + modeGap;
             }
         } else {
-            // Dropdown fallback
-            String ddKey = mod.getName() + "|" + ms.getName();
-            if (!modeDropdownAnims.containsKey(ddKey)) {
-                modeDropdownAnims.put(ddKey, new AnimatedFloat(0f));
-            }
-            AnimatedFloat ddAnim = modeDropdownAnims.get(ddKey);
-            float ddProgress = ddAnim.update();
-
-            int ddBgCol = alphaBlend(SETTING_BTN_BG, open, (int)(255 * lockAlpha));
+            int accentRGB = theme.accent() & 0x00FFFFFF;
+            int bgCol = alphaBlend(SETTING_BTN_BG, open, (int)(255 * lockAlpha));
             ((BuiltRectangle) Builder.rectangle()
                 .size(new SizeState(cellW, SETTING_BTN_H))
-                .color(new QuadColorState(ddBgCol))
+                .color(new QuadColorState(bgCol))
                 .radius(new QuadRadiusState(SETTING_BTN_RADIUS))
                 .smoothness(1.15F)
                 .build()).render(matrix, cellX, cellY);
-            int ddBorderCol = alphaBlend(SETTING_BTN_BORDER_COL, open, (int)(180 * lockAlpha));
-            ((BuiltBorder) Builder.border()
-                .size(new SizeState(cellW, SETTING_BTN_H))
-                .color(new QuadColorState(ddBorderCol))
-                .radius(new QuadRadiusState(SETTING_BTN_RADIUS))
-                .thickness(0.022F)
-                .smoothness(0.65F, 0.65F)
-                .build()).render(matrix, cellX, cellY);
 
-            int modeCol = alphaBlend(theme.textPrimary(), open, (int)(220 * lockAlpha));
+            int nameCol = alphaBlend(0xFFAAAAAA, open, (int)(220 * lockAlpha));
+            ((BuiltText) Builder.text()
+                .font(medium).text(ms.getName())
+                .color(nameCol).size(5.5F).thickness(0.04F)
+                .build()).render(matrix, cellX + 10, cellY + (SETTING_BTN_H - 5.5F) / 2f);
+
+            int valCol = alphaBlend(accentRGB | 0xFF000000, open, (int)(255 * lockAlpha));
+            float vw = medium.getWidth(current, 5.5F);
             ((BuiltText) Builder.text()
                 .font(medium).text(current)
-                .color(modeCol).size(5.5F).thickness(0.04F)
-                .build()).render(matrix, cellX + 8, cellY + (SETTING_BTN_H - 5.5F) / 2f);
-
-            String arrow = ddProgress > 0.5f ? "\u25B2" : "\u25BC";
-            float arrowW = medium.getWidth(arrow, 5.0F);
-            int arrCol = alphaBlend(0xFF888896, open, (int)(200 * lockAlpha));
-            ((BuiltText) Builder.text()
-                .font(medium).text(arrow)
-                .color(arrCol).size(5.0F).thickness(0.04F)
-                .build()).render(matrix, cellX + cellW - arrowW - 8, cellY + (SETTING_BTN_H - 5.0F) / 2f);
-
-            float ddItemH = 14;
-            float ddFullH = n * ddItemH;
-            float ddH = ddFullH * ddProgress;
-            if (ddH > 1) {
-                float ddY = cellY + SETTING_BTN_H + 2;
-                int ddBgC = alphaBlend(CARD_BODY_BG, open, 255);
-                ((BuiltRectangle) Builder.rectangle()
-                    .size(new SizeState(cellW, ddH))
-                    .color(new QuadColorState(ddBgC))
-                    .radius(new QuadRadiusState(SETTING_BTN_RADIUS))
-                    .smoothness(1.15F)
-                    .build()).render(matrix, cellX, ddY);
-                int ddBorderC = alphaBlend(SETTING_BTN_BORDER_COL, open, 200);
-                ((BuiltBorder) Builder.border()
-                    .size(new SizeState(cellW, ddH))
-                    .color(new QuadColorState(ddBorderC))
-                    .radius(new QuadRadiusState(SETTING_BTN_RADIUS))
-                    .thickness(0.022F)
-                    .smoothness(0.65F, 0.65F)
-                    .build()).render(matrix, cellX, ddY);
-
-                for (int mi = 0; mi < n; mi++) {
-                    float itemAlpha = (ddProgress * n - mi) / n * 2f;
-                    itemAlpha = Math.max(0, Math.min(1, itemAlpha * 2f));
-                    if (itemAlpha < 0.01f) continue;
-                    float iy = ddY + mi * ddItemH;
-                    if (iy - ddY > ddH) continue;
-                    boolean selM = allModes[mi].equals(current);
-                    if (selM) {
-                        int itemBg = alphaBlend((theme.accent() & 0x00FFFFFF) | 0x40000000, open, 255);
-                        double tlr = mi == 0 ? SETTING_BTN_RADIUS : 0.0;
-                        double brr = mi == n - 1 ? SETTING_BTN_RADIUS : 0.0;
-                        ((BuiltRectangle) Builder.rectangle()
-                            .size(new SizeState(cellW, ddItemH))
-                            .color(new QuadColorState(itemBg))
-                            .radius(new QuadRadiusState(tlr, 0.0, 0.0, brr))
-                            .smoothness(1.15F)
-                            .build()).render(matrix, cellX, iy);
-                    }
-                    int itemAlphaI = (int)(255 * itemAlpha);
-                    String check = selM ? "\u2713" : "  ";
-                    float cw = medium.getWidth(check, 5.0F);
-                    int cCol = selM ? (theme.accent() & 0x00FFFFFF) | (itemAlphaI << 24) : 0;
-                    if (selM) {
-                        ((BuiltText) Builder.text()
-                            .font(medium).text(check)
-                            .color(cCol).size(5.0F).thickness(0.04F)
-                            .build()).render(matrix, cellX + 4, iy + (ddItemH - 5.0F) / 2);
-                    }
-                    float txOff = selM ? 4 + cw + 4 : 4;
-                    int tCol = alphaBlend(selM ? 0xFFFFFFFF : 0xFF999999, open, (int)(255 * itemAlpha));
-                    ((BuiltText) Builder.text()
-                        .font(medium).text(allModes[mi])
-                        .color(tCol).size(5.0F).thickness(0.04F)
-                        .build()).render(matrix, cellX + txOff, iy + (ddItemH - 5.0F) / 2);
-                }
-            }
+                .color(valCol).size(5.5F).thickness(0.04F)
+                .build()).render(matrix, cellX + cellW - vw - 10, cellY + (SETTING_BTN_H - 5.5F) / 2f);
         }
     }
 
@@ -1881,11 +1914,19 @@ public class MeoRayClickGUI extends Screen {
         if (settings.isEmpty()) return 0;
         float h = SETTING_PAD;
         h += KEYBIND_H + SETTING_GAP;
+
+        java.util.Set<Setting<?>> insideSections = new java.util.HashSet<>();
+        for (Setting<?> s : settings) {
+            if (s instanceof SectionSetting sec) insideSections.addAll(sec.getChildren());
+        }
+
         int boolCount = 0;
         int numCount = 0;
         int modeCount = 0;
         for (Setting<?> s : settings) {
             if (!s.isVisible()) continue;
+            if (insideSections.contains(s)) continue;
+            if (s instanceof SectionSetting) continue;
             if (mod.getName().equals("Particles") && s instanceof BooleanSetting && s.getName().startsWith("Type ")) continue;
             if (s instanceof NumberSetting) numCount++;
             else if (s instanceof BooleanSetting) boolCount++;
@@ -1893,8 +1934,24 @@ public class MeoRayClickGUI extends Screen {
         }
         int boolRows = (boolCount + 1) / 2;
         h += boolRows * (SETTING_BTN_H + SETTING_GAP);
-        h += numCount * (26f + SETTING_GAP);
+        h += numCount * (SLIDER_ROW_H + SETTING_GAP);
         h += modeCount * (SETTING_BTN_H + SETTING_GAP);
+
+        for (Setting<?> s : settings) {
+            if (s instanceof SectionSetting sec && s.isVisible()) {
+                h += SETTING_BTN_H + SETTING_GAP;
+                if (sec.isExpanded()) {
+                    for (Setting<?> cs : sec.getChildren()) {
+                        if (!cs.isVisible()) continue;
+                        if (cs instanceof BooleanSetting) h += SETTING_BTN_H + SETTING_GAP;
+                        else if (cs instanceof NumberSetting) h += SLIDER_ROW_H + SETTING_GAP;
+                        else if (cs instanceof ModeSetting) h += SETTING_BTN_H + SETTING_GAP;
+                    }
+                    h += 4;
+                }
+            }
+        }
+
         int groupCount = 0;
         for (Setting<?> s : settings) {
             if (!s.isVisible()) continue;
@@ -1937,6 +1994,46 @@ public class MeoRayClickGUI extends Screen {
     public boolean mouseClicked(double mx, double my, int button) {
         if (button != 0 && button != 1) return super.mouseClicked(mx, my, button);
         if (closing) return super.mouseClicked(mx, my, button);
+
+        // === COLOR PICKER MOUSE ===
+        if (openColorPicker != null) {
+            float pickerW = 140f;
+            float pickerH = 130f;
+            float pxPick = (width - pickerW) / 2f;
+            float pyPick = (height - pickerH) / 2f;
+            float lxF = (float) mx;
+            float lyF = (float) my;
+
+            if (lxF >= pxPick && lxF <= pxPick + pickerW && lyF >= pyPick && lyF <= pyPick + pickerH) {
+                String[] parts = openColorPicker.split("\\|color\\|");
+                if (parts.length == 2) {
+                    Module mod = MeoRayClient.INSTANCE.moduleManager.getByName(parts[0]);
+                    if (mod != null) {
+                        ColorSetting target = null;
+                        for (Setting<?> s : mod.getSettings()) {
+                            if (s instanceof SectionSetting sec) {
+                                for (Setting<?> c : sec.getChildren()) {
+                                    if (c instanceof ColorSetting cs && cs.getName().equals(parts[1])) {
+                                        target = cs; break;
+                                    }
+                                }
+                            } else if (s instanceof ColorSetting cs && cs.getName().equals(parts[1])) {
+                                target = cs;
+                            }
+                            if (target != null) break;
+                        }
+                        if (target != null) {
+                            handleColorPickerInteraction(lxF, lyF, target, pxPick, pyPick, true);
+                            return true;
+                        }
+                    }
+                }
+            } else if (button == 0) {
+                openColorPicker = null;
+                draggingHue = false;
+                draggingSV = false;
+            }
+        }
 
         float open = openAnim.getValue();
         float gx = (width - W) / 2f + guiOffsetX;
@@ -2216,7 +2313,7 @@ public class MeoRayClickGUI extends Screen {
         }
 
         // Sliders full-width
-        float sliderH = 26f;
+        float sliderH = SLIDER_ROW_H;
         for (NumberSetting ns : nums) {
             float labelY = curY;
             float trackY = curY + 5.5F + 7;
@@ -2259,43 +2356,33 @@ public class MeoRayClickGUI extends Screen {
                         curBx += btnW + modeGap;
                     }
                 } else {
-                    String ddKey = mod.getName() + "|" + ms.getName();
-                    AnimatedFloat ddAnim = modeDropdownAnims.get(ddKey);
-                    float ddProgress = ddAnim != null ? ddAnim.getValue() : 0f;
-                    float target = ddProgress > 0.5f ? 0f : 1f;
-                    if (ddAnim == null) {
-                        AnimatedFloat newAnim = new AnimatedFloat(target);
-                        modeDropdownAnims.put(ddKey, newAnim);
-                        newAnim.animate(target, 200L, Easing.EASE_OUT_CUBIC);
-                    } else {
-                        ddAnim.snapTo(ddProgress > 0.5f ? 1f : 0f);
-                        ddAnim.animate(target, 200L, Easing.EASE_OUT_CUBIC);
-                    }
-                    return true;
-                }
-            }
-            // Check dropdown items
-            String ddKey2 = mod.getName() + "|" + ms.getName();
-            AnimatedFloat ddAnim2 = modeDropdownAnims.get(ddKey2);
-            float ddProgress2 = ddAnim2 != null ? ddAnim2.getValue() : 0f;
-            if (ddProgress2 > 0.1f) {
-                float ddY = curY + SETTING_BTN_H + 2;
-                float ddItemH = 14;
-                int n = ms.getModes().length;
-                for (int mi = 0; mi < n; mi++) {
-                    float iy = ddY + mi * ddItemH;
-                    if (ly >= iy && ly <= iy + ddItemH && lx >= sx && lx <= sx + settingW) {
-                        ms.setValue(ms.getModes()[mi]);
-                        if (ddAnim2 != null) {
-                            ddAnim2.snapTo(ddProgress2);
-                            ddAnim2.animate(0f, 200L, Easing.EASE_OUT_CUBIC);
+                    int curIdx = -1;
+                    for (int i = 0; i < allModes.length; i++) {
+                        if (allModes[i].equals(ms.getValue())) {
+                            curIdx = i;
+                            break;
                         }
-                        return true;
                     }
+                    ms.setValue(allModes[(curIdx + 1) % allModes.length]);
+                    return true;
                 }
             }
             curY += SETTING_BTN_H + SETTING_GAP;
         }
+
+        // === SECTIONS ===
+        java.util.List<SectionSetting> sectionList = new java.util.ArrayList<>();
+        java.util.Set<Setting<?>> sectionChildren = new java.util.HashSet<>();
+        for (Setting<?> s : settings) {
+            if (!s.isVisible()) continue;
+            if (s instanceof SectionSetting sec) {
+                sectionList.add(sec);
+                sectionChildren.addAll(sec.getChildren());
+            }
+        }
+        bools.removeIf(sectionChildren::contains);
+        nums.removeIf(sectionChildren::contains);
+        modes.removeIf(sectionChildren::contains);
 
         // === Group settings click ===
         java.util.List<GroupSetting> groups = new java.util.ArrayList<>();
@@ -2365,6 +2452,104 @@ public class MeoRayClickGUI extends Screen {
             }
         }
 
+        // === SECTION clicks ===
+        for (SectionSetting sec : sectionList) {
+            String key = mod.getName() + "|sec|" + sec.getName();
+            AnimatedFloat anim = sectionAnims.computeIfAbsent(key, k -> new AnimatedFloat(0f));
+            float progress = anim.getValue();
+
+            if (ly >= curY && ly <= curY + SETTING_BTN_H && lx >= sx && lx <= sx + settingW) {
+                boolean willExpand = progress < 0.5f;
+                if (willExpand) {
+                    for (SectionSetting other : sectionList) {
+                        if (other == sec) continue;
+                        String otherKey = mod.getName() + "|sec|" + other.getName();
+                        AnimatedFloat otherAnim = sectionAnims.get(otherKey);
+                        if (otherAnim != null && otherAnim.getValue() > 0.01f) {
+                            otherAnim.snapTo(otherAnim.getValue());
+                            otherAnim.animate(0f, 220L, Easing.EASE_OUT_CUBIC);
+                            other.setExpanded(false);
+                        }
+                    }
+                }
+                anim.snapTo(progress);
+                anim.animate(willExpand ? 1f : 0f, 250L, Easing.EASE_OUT_CUBIC);
+                sec.setExpanded(willExpand);
+                return true;
+            }
+            curY += SETTING_BTN_H + SETTING_GAP;
+
+            if (progress > 0.5f) {
+                for (Setting<?> cs : sec.getChildren()) {
+                    if (!cs.isVisible()) continue;
+                    float rowH;
+                    if (cs instanceof NumberSetting) rowH = SLIDER_ROW_H;
+                    else rowH = SETTING_BTN_H;
+
+                    if (cs instanceof BooleanSetting bs) {
+                        if (ly >= curY && ly <= curY + rowH && lx >= sx + 8 && lx <= sx + settingW) {
+                            toggleBoolean(mod, bs);
+                            return true;
+                        }
+                    } else if (cs instanceof NumberSetting ns) {
+                        float trackY = curY + 5.5F + 7;
+                        float trackH = 3.5f;
+                        if (ly >= trackY - 5 && ly <= trackY + trackH + 5 && lx >= sx + 8 && lx <= sx + settingW) {
+                            float trackX = sx + 8;
+                            float trackW = settingW - 8;
+                            float progressN = (lx - trackX) / trackW;
+                            progressN = Math.max(0, Math.min(1, progressN));
+                            double range = ns.getMax() - ns.getMin();
+                            double raw = ns.getMin() + range * progressN;
+                            double stepped = Math.round(raw / ns.getStep()) * ns.getStep();
+                            ns.setValue(Math.max(ns.getMin(), Math.min(ns.getMax(), stepped)));
+                            draggingSlider = true;
+                            draggingSliderMod = mod.getName();
+                            draggingSliderName = ns.getName();
+                            return true;
+                        }
+                    } else if (cs instanceof ColorSetting colorS) {
+                        if (ly >= curY && ly <= curY + SETTING_BTN_H && lx >= sx + 8 && lx <= sx + settingW) {
+                            String pickerKey = mod.getName() + "|color|" + colorS.getName();
+                            if (pickerKey.equals(openColorPicker)) {
+                                openColorPicker = null;
+                            } else {
+                                openColorPicker = pickerKey;
+                                draggingColorKey = pickerKey;
+                            }
+                            return true;
+                        }
+                    } else if (cs instanceof ModeSetting ms) {
+                        if (ly >= curY && ly <= curY + SETTING_BTN_H && lx >= sx + 8 && lx <= sx + settingW) {
+                            String[] allModes = ms.getModes();
+                            int n = allModes.length;
+                            float modeGap = 4f;
+                            float modePad = 8f;
+                            float totalTextW = 0;
+                            for (String m : allModes) totalTextW += medium.getWidth(m, 5.5F);
+                            float totalBtnW = totalTextW + n * modePad * 2 + (n - 1) * modeGap;
+                            if (totalBtnW <= settingW - 8) {
+                                float curBx = sx + 8;
+                                for (int i = 0; i < n; i++) {
+                                    String mode2 = allModes[i];
+                                    float btnW = medium.getWidth(mode2, 5.5F) + modePad * 2;
+                                    if (lx >= curBx && lx <= curBx + btnW) {
+                                        ms.setValue(mode2);
+                                        return true;
+                                    }
+                                    curBx += btnW + modeGap;
+                                }
+                            } else {
+                                ms.setValue(allModes[(java.util.Arrays.asList(allModes).indexOf(ms.getValue()) + 1) % n]);
+                                return true;
+                            }
+                        }
+                    }
+                    curY += rowH + SETTING_GAP;
+                }
+            }
+        }
+
         return false;
     }
 
@@ -2427,7 +2612,7 @@ public class MeoRayClickGUI extends Screen {
             if (i == 0) {
                 // dragged slider is in this position
             }
-            curY += 26f + SETTING_GAP;
+            curY += SLIDER_ROW_H + SETTING_GAP;
         }
         // We don't really need to find the slider here — use the dragged name and just apply progress
         for (Setting<?> s : mod.getSettings()) {
@@ -2553,6 +2738,8 @@ public class MeoRayClickGUI extends Screen {
             draggingSliderName = null;
             draggingMainScale = false;
             draggingGui = false;
+            draggingHue = false;
+            draggingSV = false;
         }
         return super.mouseReleased(mx, my, button);
     }
@@ -2581,6 +2768,36 @@ public class MeoRayClickGUI extends Screen {
             mainScaleSetting = 0.5f + prog * 1.0f;
             MeoRayClient.mainScale = mainScaleSetting;
             return true;
+        }
+        // Color picker drag
+        if (openColorPicker != null && (draggingSV || draggingHue)) {
+            float pickerW = 140f;
+            float pickerH = 130f;
+            float pxPick = (width - pickerW) / 2f;
+            float pyPick = (height - pickerH) / 2f;
+            String[] parts = openColorPicker.split("\\|color\\|");
+            if (parts.length == 2) {
+                Module mod = MeoRayClient.INSTANCE.moduleManager.getByName(parts[0]);
+                if (mod != null) {
+                    ColorSetting target = null;
+                    for (Setting<?> s : mod.getSettings()) {
+                        if (s instanceof SectionSetting sec) {
+                            for (Setting<?> c : sec.getChildren()) {
+                                if (c instanceof ColorSetting cs && cs.getName().equals(parts[1])) {
+                                    target = cs; break;
+                                }
+                            }
+                        } else if (s instanceof ColorSetting cs && cs.getName().equals(parts[1])) {
+                            target = cs;
+                        }
+                        if (target != null) break;
+                    }
+                    if (target != null) {
+                        handleColorPickerInteraction((float) mx, (float) my, target, pxPick, pyPick, false);
+                        return true;
+                    }
+                }
+            }
         }
         return super.mouseDragged(mx, my, button, deltaX, deltaY);
     }
@@ -3013,6 +3230,346 @@ public class MeoRayClickGUI extends Screen {
         return (color & 0x00FFFFFF) | (a << 24);
     }
 
+    private void renderSectionCell(Matrix4f matrix, float cellX, float cellY, float cellW,
+                                   Module mod, SectionSetting sec, float lockAlpha, float open,
+                                   Theme theme, MsdfFont medium, float lx, float ly) {
+        String key = mod.getName() + "|sec|" + sec.getName();
+        AnimatedFloat anim = sectionAnims.computeIfAbsent(key, k -> new AnimatedFloat(0f));
+        float progress = anim.getValue();
+        int accentRGB = theme.accent() & 0x00FFFFFF;
+        boolean expanded = progress > 0.5f;
+        boolean hover = lx >= cellX && lx <= cellX + cellW && ly >= cellY && ly <= cellY + SETTING_BTN_H;
+
+        // Фон секции
+        int bgCol = expanded
+            ? alphaBlend(accentRGB | 0xCC000000, open, (int)(255 * lockAlpha))
+            : alphaBlend(hover ? 0x25FFFFFF : 0x33000000, open, (int)(180 * lockAlpha));
+        ((BuiltRectangle) Builder.rectangle()
+            .size(new SizeState(cellW, SETTING_BTN_H))
+            .color(new QuadColorState(bgCol))
+            .radius(new QuadRadiusState(SETTING_BTN_RADIUS))
+            .smoothness(1.15F)
+            .build()).render(matrix, cellX, cellY);
+
+        // Название (слева)
+        int nameCol = expanded
+            ? alphaBlend(0xFFFFFFFF, open, (int)(255 * lockAlpha))
+            : alphaBlend(0xFFEEEEEE, open, (int)(255 * lockAlpha));
+        ((BuiltText) Builder.text()
+            .font(medium).text(sec.getName())
+            .color(nameCol).size(6.0F).thickness(0.04F)
+            .build()).render(matrix, cellX + 12, cellY + (SETTING_BTN_H - 6.0F) / 2f);
+
+        // === Превью (слева от стрелки, когда свёрнуто) ===
+        float rightPad = 12f;
+        float arrowSize = 6f;
+        float arrowX = cellX + cellW - rightPad - arrowSize;
+        float arrowY = cellY + (SETTING_BTN_H - arrowSize) / 2f;
+
+        if (progress < 0.5f) {
+            String preview = sec.getPreview();
+            if (!preview.isEmpty()) {
+                float previewSize = 5.0F;
+                float pw = medium.getWidth(preview, previewSize);
+                int previewCol = alphaBlend(0xFF888896, open, (int)(220 * lockAlpha));
+                float previewX = arrowX - pw - 6;
+                ((BuiltText) Builder.text()
+                    .font(medium).text(preview)
+                    .color(previewCol).size(previewSize).thickness(0.04F)
+                    .build()).render(matrix, previewX, cellY + (SETTING_BTN_H - previewSize) / 2f);
+            }
+        }
+
+        // === СТРЕЛКА ИЗ ПРИМИТИВОВ ===
+        // ▸ (свёрнуто): треугольник вправо
+        // ▾ (раскрыто): треугольник вниз
+        int arrowCol = expanded
+            ? alphaBlend(0xFFFFFFFF, open, (int)(255 * lockAlpha))
+            : alphaBlend(accentRGB | 0xFF000000, open, (int)(220 * lockAlpha));
+
+        drawTriangle(matrix, arrowX, arrowY, arrowSize, expanded, arrowCol);
+    }
+
+    /**
+     * Рисует треугольник стрелки.
+     * @param down если true — треугольник смотрит вниз (▾), иначе вправо (▸)
+     */
+    private void drawTriangle(Matrix4f matrix, float x, float y, float size, boolean down, int color) {
+        if (down) {
+            // ▾ — треугольник вниз, рисуем из горизонтальных линий уменьшающейся длины
+            int rows = (int) size;
+            float thickness = 1f;
+            for (int i = 0; i < rows; i++) {
+                float lineW = size - i * 2f;
+                if (lineW < 1f) break;
+                float lineX = x + i;
+                float lineY = y + i;
+                ((BuiltRectangle) Builder.rectangle()
+                    .size(new SizeState(lineW, thickness))
+                    .color(new QuadColorState(color))
+                    .radius(new QuadRadiusState(0.0))
+                    .smoothness(1.15F)
+                    .build()).render(matrix, lineX, lineY);
+            }
+        } else {
+            // ▸ — треугольник вправо, вертикальные линии уменьшающейся длины
+            int cols = (int) size;
+            float thickness = 1f;
+            for (int i = 0; i < cols; i++) {
+                float lineH = size - i * 2f;
+                if (lineH < 1f) break;
+                float lineX = x + i;
+                float lineY = y + i;
+                ((BuiltRectangle) Builder.rectangle()
+                    .size(new SizeState(thickness, lineH))
+                    .color(new QuadColorState(color))
+                    .radius(new QuadRadiusState(0.0))
+                    .smoothness(1.15F)
+                    .build()).render(matrix, lineX, lineY);
+            }
+        }
+    }
+
+    private void renderColorCell(Matrix4f matrix, float cellX, float cellY, float cellW,
+                                 Module mod, ColorSetting cs, float lockAlpha, float open,
+                                 Theme theme, MsdfFont medium, float lx, float ly) {
+        boolean hover = lx >= cellX && lx <= cellX + cellW && ly >= cellY && ly <= cellY + SETTING_BTN_H;
+
+        if (hover && lockAlpha > 0.5f) {
+            int hb = alphaBlend(0x18FFFFFF, open, (int)(150 * lockAlpha));
+            ((BuiltRectangle) Builder.rectangle()
+                .size(new SizeState(cellW, SETTING_BTN_H))
+                .color(new QuadColorState(hb))
+                .radius(new QuadRadiusState(SETTING_BTN_RADIUS))
+                .smoothness(1.15F)
+                .build()).render(matrix, cellX, cellY);
+        }
+
+        int nameCol = alphaBlend(0xFFCCCCCC, open, (int)(255 * lockAlpha));
+        ((BuiltText) Builder.text()
+            .font(medium).text(cs.getName())
+            .color(nameCol).size(5.5F).thickness(0.04F)
+            .build()).render(matrix, cellX + 10, cellY + (SETTING_BTN_H - 5.5F) / 2f);
+
+        float chipW = 24f, chipH = 12f;
+        float chipX = cellX + cellW - chipW - 8;
+        float chipY = cellY + (SETTING_BTN_H - chipH) / 2f;
+
+        ((BuiltRectangle) Builder.rectangle()
+            .size(new SizeState(chipW + 2, chipH + 2))
+            .color(new QuadColorState(0x80000000))
+            .radius(new QuadRadiusState(3.5))
+            .smoothness(1.15F)
+            .build()).render(matrix, chipX - 1, chipY - 1);
+
+        int col = cs.getRGB() | 0xFF000000;
+        col = alphaBlend(col, open, (int)(255 * lockAlpha));
+        ((BuiltRectangle) Builder.rectangle()
+            .size(new SizeState(chipW, chipH))
+            .color(new QuadColorState(col))
+            .radius(new QuadRadiusState(3.0))
+            .smoothness(1.15F)
+            .build()).render(matrix, chipX, chipY);
+
+        int borderCol = alphaBlend(0x66FFFFFF, open, (int)(180 * lockAlpha));
+        ((BuiltBorder) Builder.border()
+            .size(new SizeState(chipW, chipH))
+            .color(new QuadColorState(borderCol))
+            .radius(new QuadRadiusState(3.0))
+            .thickness(0.018F)
+            .smoothness(0.65F, 0.65F)
+            .build()).render(matrix, chipX, chipY);
+    }
+
+    private void renderColorPicker(Matrix4f matrix, float px, float py,
+                                   ColorSetting cs, String key, float open,
+                                   Theme theme, MsdfFont medium, float lx, float ly) {
+        float pickerW = 140f;
+        float pickerH = 130f;
+
+        ((BuiltRectangle) Builder.rectangle()
+            .size(new SizeState(pickerW, pickerH))
+            .color(new QuadColorState(0xF01A1A20))
+            .radius(new QuadRadiusState(5.0))
+            .smoothness(1.15F)
+            .build()).render(matrix, px, py);
+
+        int accentRGB = theme.accent() & 0x00FFFFFF;
+        ((BuiltBorder) Builder.border()
+            .size(new SizeState(pickerW, pickerH))
+            .color(new QuadColorState(accentRGB | 0xC0000000))
+            .radius(new QuadRadiusState(5.0))
+            .thickness(0.022F)
+            .smoothness(0.65F, 0.65F)
+            .build()).render(matrix, px, py);
+
+        Color cur = cs.getValue();
+        float[] hsb = Color.RGBtoHSB(cur.getRed(), cur.getGreen(), cur.getBlue(), null);
+        float hue = hsb[0], sat = hsb[1], bri = hsb[2];
+
+        float svX = px + 8;
+        float svY = py + 8;
+        float svSize = 90f;
+
+        int hueColor = Color.HSBtoRGB(hue, 1f, 1f);
+
+        ((BuiltRectangle) Builder.rectangle()
+            .size(new SizeState(svSize, svSize))
+            .color(new QuadColorState(0xFFFFFFFF, hueColor | 0xFF000000, hueColor | 0xFF000000, 0xFFFFFFFF))
+            .radius(new QuadRadiusState(2.0))
+            .smoothness(1.15F)
+            .build()).render(matrix, svX, svY);
+
+        ((BuiltRectangle) Builder.rectangle()
+            .size(new SizeState(svSize, svSize))
+            .color(new QuadColorState(0x00000000, 0x00000000, 0xFF000000, 0xFF000000))
+            .radius(new QuadRadiusState(2.0))
+            .smoothness(1.15F)
+            .build()).render(matrix, svX, svY);
+
+        float markerX = svX + sat * svSize;
+        float markerY = svY + (1f - bri) * svSize;
+        ((BuiltRectangle) Builder.rectangle()
+            .size(new SizeState(7, 7))
+            .color(new QuadColorState(0xFF000000))
+            .radius(new QuadRadiusState(3.5))
+            .smoothness(1.15F)
+            .build()).render(matrix, markerX - 3.5f, markerY - 3.5f);
+        ((BuiltRectangle) Builder.rectangle()
+            .size(new SizeState(5, 5))
+            .color(new QuadColorState(0xFFFFFFFF))
+            .radius(new QuadRadiusState(2.5))
+            .smoothness(1.15F)
+            .build()).render(matrix, markerX - 2.5f, markerY - 2.5f);
+
+        float hueX = svX + svSize + 6;
+        float hueW = 12f;
+
+        int segments = 12;
+        float segH = svSize / segments;
+        for (int i = 0; i < segments; i++) {
+            float h1 = (float) i / segments;
+            float h2 = (float) (i + 1) / segments;
+            int c1 = Color.HSBtoRGB(h1, 1f, 1f) | 0xFF000000;
+            int c2 = Color.HSBtoRGB(h2, 1f, 1f) | 0xFF000000;
+            double tlr = (i == 0) ? 2.0 : 0.0;
+            double trr = (i == 0) ? 2.0 : 0.0;
+            double brr = (i == segments - 1) ? 2.0 : 0.0;
+            double blr = (i == segments - 1) ? 2.0 : 0.0;
+            ((BuiltRectangle) Builder.rectangle()
+                .size(new SizeState(hueW, segH + 0.5f))
+                .color(new QuadColorState(c1, c1, c2, c2))
+                .radius(new QuadRadiusState(tlr, trr, brr, blr))
+                .smoothness(1.15F)
+                .build()).render(matrix, hueX, svY + i * segH);
+        }
+
+        float hueMarkerY = svY + hue * svSize;
+        ((BuiltRectangle) Builder.rectangle()
+            .size(new SizeState(hueW + 4, 3))
+            .color(new QuadColorState(0xFFFFFFFF))
+            .radius(new QuadRadiusState(1.5))
+            .smoothness(1.15F)
+            .build()).render(matrix, hueX - 2, hueMarkerY - 1.5f);
+
+        String hex = String.format("#%02X%02X%02X", cur.getRed(), cur.getGreen(), cur.getBlue());
+        float hexY = svY + svSize + 6;
+        float hexW = pickerW - 16;
+        float hexH = 16;
+        ((BuiltRectangle) Builder.rectangle()
+            .size(new SizeState(hexW, hexH))
+            .color(new QuadColorState(0xFF0F0F18))
+            .radius(new QuadRadiusState(3.0))
+            .smoothness(1.15F)
+            .build()).render(matrix, svX, hexY);
+
+        int prevCol = cur.getRGB() | 0xFF000000;
+        ((BuiltRectangle) Builder.rectangle()
+            .size(new SizeState(10, 10))
+            .color(new QuadColorState(prevCol))
+            .radius(new QuadRadiusState(2.0))
+            .smoothness(1.15F)
+            .build()).render(matrix, svX + 4, hexY + 3);
+
+        ((BuiltText) Builder.text()
+            .font(medium).text(hex)
+            .color(0xFFEEEEEE).size(5.5F).thickness(0.04F)
+            .build()).render(matrix, svX + 20, hexY + (hexH - 5.5F) / 2f);
+    }
+
+    private boolean handleColorPickerInteraction(float lx, float ly, ColorSetting cs,
+                                                  float px, float py, boolean pressed) {
+        float pickerW = 140f;
+        float pickerH = 130f;
+        if (!(lx >= px && lx <= px + pickerW && ly >= py && ly <= py + pickerH)) {
+            return false;
+        }
+
+        float svX = px + 8;
+        float svY = py + 8;
+        float svSize = 90f;
+        float hueX = svX + svSize + 6;
+        float hueW = 12f;
+
+        Color cur = cs.getValue();
+        float[] hsb = Color.RGBtoHSB(cur.getRed(), cur.getGreen(), cur.getBlue(), null);
+        float hue = hsb[0], sat = hsb[1], bri = hsb[2];
+
+        if (lx >= svX && lx <= svX + svSize && ly >= svY && ly <= svY + svSize) {
+            if (pressed) draggingSV = true;
+        }
+        if (lx >= hueX && lx <= hueX + hueW && ly >= svY && ly <= svY + svSize) {
+            if (pressed) draggingHue = true;
+        }
+
+        if (draggingSV) {
+            sat = Math.max(0, Math.min(1, (lx - svX) / svSize));
+            bri = Math.max(0, Math.min(1, 1f - (ly - svY) / svSize));
+        }
+        if (draggingHue) {
+            hue = Math.max(0, Math.min(1, (ly - svY) / svSize));
+        }
+
+        if (draggingSV || draggingHue) {
+            int rgb = Color.HSBtoRGB(hue, sat, bri);
+            cs.setValue(new Color((rgb >> 16) & 0xFF, (rgb >> 8) & 0xFF, rgb & 0xFF, cur.getAlpha()));
+            return true;
+        }
+        return true;
+    }
+
+    private void renderColorPickerOverlay(Matrix4f matrix, float lx, float ly, float open, Theme theme) {
+        if (openColorPicker == null) return;
+        String[] parts = openColorPicker.split("\\|color\\|");
+        if (parts.length != 2) return;
+        Module mod = MeoRayClient.INSTANCE.moduleManager.getByName(parts[0]);
+        if (mod == null) return;
+
+        ColorSetting target = null;
+        for (Setting<?> s : mod.getSettings()) {
+            if (s instanceof SectionSetting sec) {
+                for (Setting<?> c : sec.getChildren()) {
+                    if (c instanceof ColorSetting cs && cs.getName().equals(parts[1])) {
+                        target = cs;
+                        break;
+                    }
+                }
+            } else if (s instanceof ColorSetting cs && cs.getName().equals(parts[1])) {
+                target = cs;
+            }
+            if (target != null) break;
+        }
+        if (target == null) return;
+
+        float pickerW = 140f;
+        float pickerH = 130f;
+        float px = (width - pickerW) / 2f;
+        float py = (height - pickerH) / 2f;
+
+        MsdfFont medium = FontManager.SUISSEINTMEDIUM.get();
+        renderColorPicker(matrix, px, py, target, openColorPicker, open, theme, medium, lx, ly);
+    }
+
     private void renderGroupCell(Matrix4f matrix, float cellX, float cellY, float cellW,
                                Module mod, GroupSetting gs, float lockAlpha, float open,
                                Theme theme, MsdfFont medium, float lx, float ly) {
@@ -3112,39 +3669,36 @@ public class MeoRayClickGUI extends Screen {
                 .color(itemNameCol).size(5.5F).thickness(0.04F)
                 .build()).render(matrix, cellX + 10, iy + (itemH - 5.5F) / 2f);
 
-            // Checkbox (right)
-            float cbSize = 10f;
-            float cbX = cellX + cellW - cbSize - 10;
-            float cbY = iy + (itemH - cbSize) / 2f;
-
-            int cbBg = val
-                ? alphaBlend(SETTING_BTN_ACTIVE_COL, open, (int)(255 * itemAlpha))
-                : alphaBlend(0xFF1A1A1F, open, (int)(255 * itemAlpha));
+            // Mini iOS toggle (right)
+            float mTogX = cellX + cellW - MINI_TOGGLE_W - 10;
+            float mTogY = iy + (itemH - MINI_TOGGLE_H) / 2f;
+            int mTrack = lerpColor(0xFF2A2A30, SETTING_BTN_ACTIVE_COL & 0x00FFFFFF | 0xE0000000, val ? 1f : 0f);
+            mTrack = alphaBlend(mTrack, open, (int)(255 * itemAlpha));
             ((BuiltRectangle) Builder.rectangle()
-                .size(new SizeState(cbSize, cbSize))
-                .color(new QuadColorState(cbBg))
-                .radius(new QuadRadiusState(2.5f))
+                .size(new SizeState(MINI_TOGGLE_W, MINI_TOGGLE_H))
+                .color(new QuadColorState(mTrack))
+                .radius(new QuadRadiusState(MINI_TOGGLE_H / 2f))
                 .smoothness(1.15F)
-                .build()).render(matrix, cbX, cbY);
+                .build()).render(matrix, mTogX, mTogY);
 
-            if (!val) {
-                int cbBorder = alphaBlend(SETTING_BTN_BORDER_COL, open, (int)(200 * itemAlpha));
-                ((BuiltBorder) Builder.border()
-                    .size(new SizeState(cbSize, cbSize))
-                    .color(new QuadColorState(cbBorder))
-                    .radius(new QuadRadiusState(2.5f))
-                    .thickness(0.022F)
-                    .smoothness(0.65F, 0.65F)
-                    .build()).render(matrix, cbX, cbY);
-            }
+            int mBorderCol = alphaBlend(0x33FFFFFF, open, (int)(255 * itemAlpha));
+            ((BuiltBorder) Builder.border()
+                .size(new SizeState(MINI_TOGGLE_W, MINI_TOGGLE_H))
+                .color(new QuadColorState(mBorderCol))
+                .radius(new QuadRadiusState(MINI_TOGGLE_H / 2f))
+                .thickness(0.02F)
+                .smoothness(0.65F, 0.65F)
+                .build()).render(matrix, mTogX, mTogY);
 
-            if (val) {
-                int checkCol = alphaBlend(0xFFFFFFFF, open, (int)(255 * itemAlpha));
-                ((BuiltText) Builder.text()
-                    .font(medium).text("\u2713")
-                    .color(checkCol).size(5.5f).thickness(0.06F)
-                    .build()).render(matrix, cbX + 2.2f, cbY + 2.2f);
-            }
+            float mKnobX = mTogX + 2f + (MINI_TOGGLE_W - MINI_TOGGLE_KNOB - 4f) * (val ? 1f : 0f);
+            float mKnobY = mTogY + (MINI_TOGGLE_H - MINI_TOGGLE_KNOB) / 2f;
+            int mKnobCol = alphaBlend(0xFFFFFFFF, open, (int)(255 * itemAlpha));
+            ((BuiltRectangle) Builder.rectangle()
+                .size(new SizeState(MINI_TOGGLE_KNOB, MINI_TOGGLE_KNOB))
+                .color(new QuadColorState(mKnobCol))
+                .radius(new QuadRadiusState(MINI_TOGGLE_KNOB / 2f))
+                .smoothness(1.15F)
+                .build()).render(matrix, mKnobX, mKnobY);
 
             idx++;
         }

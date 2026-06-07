@@ -26,6 +26,7 @@ import net.fabricmc.fabric.api.client.rendering.v1.WorldRenderEvents;
 import dev.meoray.client.core.Module;
 import dev.meoray.client.feature.render.ESP;
 import dev.meoray.client.feature.render.HitEffect;
+import dev.meoray.client.feature.render.JumpCircles;
 import net.minecraft.client.option.KeyBinding;
 import net.minecraft.client.util.InputUtil;
 import org.lwjgl.glfw.GLFW;
@@ -113,6 +114,7 @@ public class MeoRayClient implements ClientModInitializer {
                 he.tick();
             }
             WindowTitleAnimator.tick();
+            dev.meoray.client.hud.CustomHotbar.tick();
             MeoRayRPCUpdater.tick();
 
             saveTimer++;
@@ -130,6 +132,7 @@ public class MeoRayClient implements ClientModInitializer {
             boolean invOn = false;
             boolean targetOn = false;
             boolean keyListOn = false;
+            boolean hotbarOn = false;
 
             if (iface != null && iface.isEnabled()) {
                 for (dev.meoray.client.core.setting.Setting<?> s : iface.getSettings()) {
@@ -140,6 +143,7 @@ public class MeoRayClient implements ClientModInitializer {
                         case "InventoryHUD" -> invOn = (boolean) s.getValue();
                         case "TargetHUD" -> targetOn = (boolean) s.getValue();
                         case "KeyList" -> keyListOn = (boolean) s.getValue();
+                        case "Hotbar" -> hotbarOn = (boolean) s.getValue();
                     }
                 }
             }
@@ -169,6 +173,7 @@ public class MeoRayClient implements ClientModInitializer {
             if (invOn) inventoryHUD.render(context);
             if (targetOn) targetHUD.render(context);
             if (keyListOn) keyListHUD.render(context);
+            if (hotbarOn) dev.meoray.client.hud.CustomHotbar.render(context);
 
             Module arrows = moduleManager.getByName("Arrows");
             if (arrows instanceof dev.meoray.client.feature.render.Arrows a) {
@@ -195,6 +200,15 @@ public class MeoRayClient implements ClientModInitializer {
             Module he = INSTANCE.moduleManager.getByName("HitEffect");
             if (he != null && he.isEnabled() && he instanceof HitEffect heMod) {
                 heMod.onWorldRender(context.matrixStack(), context.tickCounter().getTickDelta(false));
+            }
+
+            Module ch = INSTANCE.moduleManager.getByName("ChinaHat");
+            if (ch != null && ch.isEnabled() && ch instanceof dev.meoray.client.feature.render.ChinaHat chinaHat) {
+                chinaHat.onWorldRender(context.matrixStack(), context.tickCounter().getTickDelta(false));
+            }
+            Module jc = INSTANCE.moduleManager.getByName("JumpCircles");
+            if (jc != null && jc.isEnabled() && jc instanceof JumpCircles jumpCircles) {
+                jumpCircles.onWorldRender(context.matrixStack(), context.tickCounter().getTickDelta(false));
             }
         });
 

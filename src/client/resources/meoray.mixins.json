@@ -31,7 +31,8 @@
     "MouseHudMixin",
     "ToastManagerMixin",
     "HeldItemRendererMixin",
-    "ClickFriendMixin"
+    "ClickFriendMixin",
+    "InGameHudHotbarMixin"
   ],
   "injectors": {
     "defaultRequire": 1
