@@ -1,7 +1,9 @@
 package dev.meoray.client.managers;
 
 import com.google.gson.*;
+import com.google.gson.reflect.TypeToken;
 import dev.meoray.client.MeoRayClient;
+import dev.meoray.client.account.altmanager.NickName;
 import dev.meoray.client.core.Module;
 import dev.meoray.client.core.ModuleManager;
 import dev.meoray.client.core.setting.BooleanSetting;
@@ -19,9 +21,13 @@ import net.fabricmc.api.Environment;
 import net.minecraft.client.MinecraftClient;
 
 import java.io.*;
+import java.lang.reflect.Type;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
+import java.util.ArrayList;
 import java.util.List;
+
+import com.google.gson.JsonArray;
 
 @Environment(EnvType.CLIENT)
 public class ConfigManager {
@@ -235,5 +241,51 @@ public class ConfigManager {
 
     private String sanitize(String name) {
         return name.replaceAll("[^a-zA-Z0-9_\\-]", "_");
+    }
+
+    // ──────────────────────────────────────────────
+    // NickName Persistence
+    // ──────────────────────────────────────────────
+
+    private Path getNickNamesFile() {
+        return configDir.resolve("nicknames.json");
+    }
+
+    public void saveNickNames() {
+        List<NickName> list = MeoRayClient.INSTANCE.getNickNameManager().getNickNames();
+        JsonArray arr = new JsonArray();
+        for (NickName nn : list) {
+            JsonObject obj = new JsonObject();
+            obj.addProperty("nickname", nn.getNickname());
+            obj.addProperty("tag", nn.getTag());
+            arr.add(obj);
+        }
+        writeJson(getNickNamesFile(), arr);
+    }
+
+    public void loadNickNames() {
+        Path file = getNickNamesFile();
+        if (!Files.exists(file)) return;
+        try (Reader reader = new InputStreamReader(Files.newInputStream(file), StandardCharsets.UTF_8)) {
+            JsonArray arr = JsonParser.parseReader(reader).getAsJsonArray();
+            for (int i = 0; i < arr.size(); i++) {
+                JsonObject obj = arr.get(i).getAsJsonObject();
+                String nick = obj.get("nickname").getAsString();
+                String tag = obj.has("tag") ? obj.get("tag").getAsString() : "";
+                MeoRayClient.INSTANCE.getNickNameManager().addNickname(new NickName(nick, tag));
+            }
+        } catch (Exception e) {
+            System.err.println("[ConfigManager] Failed to load nicknames: " + e.getMessage());
+        }
+    }
+
+    private void writeJson(Path path, JsonElement data) {
+        try (Writer writer = new OutputStreamWriter(
+                Files.newOutputStream(path, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING),
+                StandardCharsets.UTF_8)) {
+            GSON.toJson(data, writer);
+        } catch (IOException e) {
+            System.err.println("[ConfigManager] Write error: " + e.getMessage());
+        }
     }
 }

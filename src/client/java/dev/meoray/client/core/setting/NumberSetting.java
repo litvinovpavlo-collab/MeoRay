@@ -29,4 +29,10 @@ public class NumberSetting extends Setting<Double> {
         double stepped = Math.round(raw / step) * step;
         value = Math.max(min, Math.min(max, stepped));
     }
+
+    @Override
+    public NumberSetting visibleWhen(java.util.function.Supplier<Boolean> condition) {
+        super.visibleWhen(condition);
+        return this;
+    }
 }

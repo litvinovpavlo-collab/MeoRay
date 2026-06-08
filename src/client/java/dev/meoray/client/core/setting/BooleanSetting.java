@@ -8,4 +8,10 @@ public class BooleanSetting extends Setting<Boolean> {
     public void toggle() {
         setValue(!getValue());
     }
+
+    @Override
+    public BooleanSetting visibleWhen(java.util.function.Supplier<Boolean> condition) {
+        super.visibleWhen(condition);
+        return this;
+    }
 }

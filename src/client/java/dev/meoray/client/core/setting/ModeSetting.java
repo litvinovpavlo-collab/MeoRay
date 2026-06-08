@@ -19,4 +19,10 @@ public class ModeSetting extends Setting<String> {
         }
         value = modes[(i + 1) % modes.length];
     }
+
+    @Override
+    public ModeSetting visibleWhen(java.util.function.Supplier<Boolean> condition) {
+        super.visibleWhen(condition);
+        return this;
+    }
 }

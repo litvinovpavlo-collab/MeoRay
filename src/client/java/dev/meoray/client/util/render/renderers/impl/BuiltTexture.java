@@ -8,8 +8,8 @@ import dev.meoray.client.util.render.providers.ResourceProvider;
 import dev.meoray.client.util.render.renderers.IRenderer;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
-import net.minecraft.client.gl.ShaderProgram;
 import net.minecraft.client.gl.Defines;
+import net.minecraft.client.gl.ShaderProgram;
 import net.minecraft.client.gl.ShaderProgramKey;
 import net.minecraft.client.render.BufferBuilder;
 import net.minecraft.client.render.BufferRenderer;
@@ -19,7 +19,7 @@ import net.minecraft.client.render.VertexFormats;
 import org.joml.Matrix4f;
 
 @Environment(EnvType.CLIENT)
-public record BuiltTexture(SizeState size, QuadRadiusState radius, QuadColorState color, float smoothness) implements IRenderer {
+public record BuiltTexture(SizeState size, QuadRadiusState radius, QuadColorState color, float smoothness, float u, float v, float texWidth, float texHeight, int textureId) implements IRenderer {
     private static final Tessellator TESS = new Tessellator(512);
     private static final ShaderProgramKey TEXTURE_SHADER_KEY = new ShaderProgramKey(
         ResourceProvider.getShaderIdentifier("texture"),
@@ -31,6 +31,9 @@ public record BuiltTexture(SizeState size, QuadRadiusState radius, QuadColorStat
         RenderSystem.enableBlend();
         RenderSystem.defaultBlendFunc();
         RenderSystem.disableCull();
+        if (this.textureId != 0) {
+            RenderSystem.setShaderTexture(0, this.textureId);
+        }
 
         float width = this.size.width();
         float height = this.size.height();
@@ -40,7 +43,11 @@ public record BuiltTexture(SizeState size, QuadRadiusState radius, QuadColorStat
         shader.getUniform("Radius").set(this.radius.radius1(), this.radius.radius2(), this.radius.radius3(), this.radius.radius4());
         shader.getUniform("Smoothness").set(this.smoothness);
 
-        float u1 = 0.0f, u2 = 1.0f, v1 = 0.0f, v2 = 1.0f;
+        float u1 = this.u;
+        float v1 = this.v;
+        float u2 = this.u + (this.texWidth > 0 ? this.texWidth : 1.0f);
+        float v2 = this.v + (this.texHeight > 0 ? this.texHeight : 1.0f);
+
         BufferBuilder builder = TESS.begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_TEXTURE_COLOR);
         builder.vertex(matrix, x, y, z).texture(u1, v1).color(this.color.color1());
         builder.vertex(matrix, x, y + height, z).texture(u1, v2).color(this.color.color2());
@@ -48,6 +55,9 @@ public record BuiltTexture(SizeState size, QuadRadiusState radius, QuadColorStat
         builder.vertex(matrix, x + width, y, z).texture(u2, v1).color(this.color.color4());
         BufferRenderer.drawWithGlobalProgram(builder.end());
 
+        if (this.textureId != 0) {
+            RenderSystem.setShaderTexture(0, 0);
+        }
         RenderSystem.enableCull();
         RenderSystem.disableBlend();
     }

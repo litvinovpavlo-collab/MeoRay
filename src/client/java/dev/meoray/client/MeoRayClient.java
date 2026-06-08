@@ -1,12 +1,14 @@
 package dev.meoray.client;
 
 import dev.meoray.client.account.AccountManager;
+import dev.meoray.client.account.altmanager.AltManagerScreen;
+import dev.meoray.client.account.altmanager.NickNameManager;
 import dev.meoray.client.core.ModuleManager;
 import dev.meoray.client.managers.ConfigManager;
 import dev.meoray.client.managers.FriendManager;
 import dev.meoray.client.gui.screen.MeoRayClickGUI;
-//import dev.nova.client.gui.ClickGUI;
 import dev.meoray.client.gui.theme.ThemeManager;
+import dev.meoray.client.util.other.NameGen;
 import dev.meoray.client.hud.CoordsHUD;
 import dev.meoray.client.hud.HudElement;
 import dev.meoray.client.hud.InfoHUD;
@@ -52,6 +54,9 @@ public class MeoRayClient implements ClientModInitializer {
     private final FriendManager friendManager = new FriendManager();
     private final TargetHUD targetHUD = new TargetHUD();
     private final KeyListHUD keyListHUD = new KeyListHUD();
+    private final NickNameManager nickNameManager = new NickNameManager();
+    private final NameGen nameGen = new NameGen();
+    private AltManagerScreen altManagerScreen;
     private KeyBinding toggleKey;
     private final BitSet prevKeys = new BitSet(256);
     private int saveTimer = 0;
@@ -59,6 +64,9 @@ public class MeoRayClient implements ClientModInitializer {
     @Override
     public void onInitializeClient() {
         INSTANCE = this;
+
+        // Pre-init GLFW before Minecraft's GLX._initGlfw() to work around Fabric Loom dev env bug
+        GLFW.glfwInit();
 
         AccountManager.load();
         System.out.println("[MeoRay] Loaded " + AccountManager.getAccounts().size() + " accounts");
@@ -74,7 +82,8 @@ public class MeoRayClient implements ClientModInitializer {
 
         configManager = new ConfigManager(moduleManager, draggableManager, themeManager);
         configManager.loadAll();
-        System.out.println("[MeoRay] Config loaded");
+        configManager.loadNickNames();
+        System.out.println("[MeoRay] Config loaded (" + nickNameManager.getNickNames().size() + " nicknames)");
 
         toggleKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
                 "Open MeoRay GUI",
@@ -105,10 +114,25 @@ public class MeoRayClient implements ClientModInitializer {
                     client.setScreen(clickGUI);
                 }
             }
+            // Module keybinds
+            if (client.getWindow() != null && client.getWindow().getHandle() != 0) {
+                long handle = client.getWindow().getHandle();
+                for (Module mod : moduleManager.getModules()) {
+                    int k = mod.getKey();
+                    if (k <= 0 || k >= 256) continue;
+                    boolean pressed = GLFW.glfwGetKey(handle, k) == GLFW.GLFW_PRESS;
+                    boolean wasPressed = prevKeys.get(k);
+                    if (pressed && !wasPressed) mod.toggle();
+                    prevKeys.set(k, pressed);
+                }
+                if (client.currentScreen != null) prevKeys.clear();
+            }
             // Update sky color from current theme
             int accentRgb = themeManager.getRenderTheme().accent() & 0x00FFFFFF;
             dev.meoray.client.util.render.SkyConfig.setBaseColorRgb(accentRgb);
             moduleManager.onTick();
+            moduleManager.onTickMovement();
+            moduleManager.onMoveInput();
             Module heMod = moduleManager.getByName("HitEffect");
             if (heMod != null && heMod.isEnabled() && heMod instanceof HitEffect he) {
                 he.tick();
@@ -133,6 +157,7 @@ public class MeoRayClient implements ClientModInitializer {
             boolean targetOn = false;
             boolean keyListOn = false;
             boolean hotbarOn = false;
+            boolean notifyOn = false;
 
             if (iface != null && iface.isEnabled()) {
                 for (dev.meoray.client.core.setting.Setting<?> s : iface.getSettings()) {
@@ -144,6 +169,7 @@ public class MeoRayClient implements ClientModInitializer {
                         case "TargetHUD" -> targetOn = (boolean) s.getValue();
                         case "KeyList" -> keyListOn = (boolean) s.getValue();
                         case "Hotbar" -> hotbarOn = (boolean) s.getValue();
+                        case "Notifications" -> notifyOn = (boolean) s.getValue();
                     }
                 }
             }
@@ -181,6 +207,11 @@ public class MeoRayClient implements ClientModInitializer {
             }
 
             context.getMatrices().pop();
+
+            // Notifications — рендерятся вне scale, всегда поверх
+            if (notifyOn) {
+                dev.meoray.client.notify.NotificationRenderer.render(context);
+            }
         });
 
         HudRenderCallback.EVENT.register((ctx, tickDeltaManager) -> {
@@ -210,6 +241,11 @@ public class MeoRayClient implements ClientModInitializer {
             if (jc != null && jc.isEnabled() && jc instanceof JumpCircles jumpCircles) {
                 jumpCircles.onWorldRender(context.matrixStack(), context.tickCounter().getTickDelta(false));
             }
+
+            Module aa = INSTANCE.moduleManager.getByName("AttackAura");
+            if (aa != null && aa.isEnabled() && aa instanceof dev.meoray.client.feature.combat.AttackAura aura) {
+                aura.onWorldRender(context.matrixStack(), context.tickCounter().getTickDelta(false));
+            }
         });
 
         System.out.println("MeoRay client initialized");
@@ -233,6 +269,21 @@ public class MeoRayClient implements ClientModInitializer {
 
     public ConfigManager getConfigManager() {
         return configManager;
+    }
+
+    public NickNameManager getNickNameManager() {
+        return nickNameManager;
+    }
+
+    public NameGen getNameGen() {
+        return nameGen;
+    }
+
+    public AltManagerScreen getAltManagerScreen() {
+        if (altManagerScreen == null) {
+            altManagerScreen = new AltManagerScreen(null);
+        }
+        return altManagerScreen;
     }
 
     public void onShutdown() {

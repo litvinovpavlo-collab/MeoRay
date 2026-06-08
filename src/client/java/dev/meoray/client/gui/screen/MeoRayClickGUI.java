@@ -92,6 +92,7 @@ public class MeoRayClickGUI extends Screen {
     private static final float SLIDER_ROW_H = 26f;
     private static final float SLIDER_TRACK_H = 3.5f;
     private static final float SLIDER_THUMB_R = 5.5f;
+    private NumberSetting hoveredSliderSetting;
 
     // Mini toggle (for group sub-options)
     private static final float MINI_TOGGLE_W = 16f;
@@ -222,6 +223,7 @@ public class MeoRayClickGUI extends Screen {
 
     @Override
     public void render(DrawContext ctx, int mx, int my, float delta) {
+        hoveredSliderSetting = null;
         float open = openAnim.update();
 
         // Smooth GUI dragging via lerp
@@ -1351,6 +1353,7 @@ public class MeoRayClickGUI extends Screen {
         boolean sliderHovered = lockAlpha >= 0.5f && hoveredSliderKey != null && hoveredSliderKey.equals(sliderKey);
         if (lockAlpha >= 0.5f && lx >= cellX && lx <= cellX + cellW && ly >= cellY && ly <= cellY + SLIDER_ROW_H) {
             hoveredSliderKey = sliderKey;
+            hoveredSliderSetting = ns;
         }
 
         // Label (left)
@@ -2708,6 +2711,14 @@ public class MeoRayClickGUI extends Screen {
                 if (bodyH <= 0) continue;
 
                 if (lx >= cardX && lx <= cardX + colW && ly >= bodyY && ly <= bodyY + bodyH) {
+                    // Scroll wheel for NumberSetting sliders
+                    if (hoveredSliderSetting != null) {
+                        double step = hoveredSliderSetting.getStep();
+                        double newVal = hoveredSliderSetting.getValue() + step * verticalAmount;
+                        newVal = Math.max(hoveredSliderSetting.getMin(), Math.min(hoveredSliderSetting.getMax(), newVal));
+                        hoveredSliderSetting.setValue(newVal);
+                        return true;
+                    }
                     // Курсор над телом — скроллим тело
                     String mn = mod.getName();
                     float maxScroll = bodyScrollMax.getOrDefault(mn, 0f);
@@ -2874,8 +2885,26 @@ public class MeoRayClickGUI extends Screen {
 
     private static String getKeyName(int key) {
         if (key <= 0) return "NONE";
-        String name = GLFW.glfwGetKeyName(key, 0);
-        return name != null ? name.toUpperCase() : "KEY_" + key;
+        return switch (key) {
+            case GLFW.GLFW_KEY_ESCAPE -> "ESC";
+            case GLFW.GLFW_KEY_LEFT_SHIFT, GLFW.GLFW_KEY_RIGHT_SHIFT -> "SHIFT";
+            case GLFW.GLFW_KEY_LEFT_CONTROL, GLFW.GLFW_KEY_RIGHT_CONTROL -> "CTRL";
+            case GLFW.GLFW_KEY_LEFT_ALT, GLFW.GLFW_KEY_RIGHT_ALT -> "ALT";
+            case GLFW.GLFW_KEY_TAB -> "TAB";
+            case GLFW.GLFW_KEY_CAPS_LOCK -> "CAPS";
+            case GLFW.GLFW_KEY_SPACE -> "SPACE";
+            case GLFW.GLFW_KEY_ENTER -> "ENTER";
+            case GLFW.GLFW_KEY_BACKSPACE -> "BSPACE";
+            case GLFW.GLFW_KEY_DELETE -> "DEL";
+            case GLFW.GLFW_KEY_UP -> "UP";
+            case GLFW.GLFW_KEY_DOWN -> "DOWN";
+            case GLFW.GLFW_KEY_LEFT -> "LEFT";
+            case GLFW.GLFW_KEY_RIGHT -> "RIGHT";
+            default -> {
+                String name = GLFW.glfwGetKeyName(key, 0);
+                yield name != null ? name.toUpperCase() : "KEY_" + key;
+            }
+        };
     }
 
     private void initParticles() {

@@ -26,11 +26,9 @@ public class ModuleManager {
         register(new ESP());
         register(new ChinaHat());
         register(new JumpCircles());
-        register(new TargetHUD());
         register(new NoRender());
         register(new BetterWorld());
         register(new Particles());
-        register(new FullBright());
         register(new Interface());
         register(new HitEffect());
         register(new SwordAnimation());
@@ -64,5 +62,23 @@ public class ModuleManager {
         modules.stream()
                 .filter(Module::isEnabled)
                 .forEach(Module::onTick);
+    }
+
+    public void onTickMovement() {
+        modules.stream()
+                .filter(Module::isEnabled)
+                .forEach(Module::onTickMovement);
+    }
+
+    public void eventRotate() {
+        modules.stream()
+                .filter(Module::isEnabled)
+                .forEach(Module::eventRotate);
+    }
+
+    public void onMoveInput() {
+        modules.stream()
+                .filter(Module::isEnabled)
+                .forEach(Module::onMoveInput);
     }
 }

@@ -13,6 +13,7 @@ public class Interface extends Module {
     public final BooleanSetting targetHud = add(new BooleanSetting("TargetHUD", false));
     public final BooleanSetting keyList = add(new BooleanSetting("KeyList", false));
     public final BooleanSetting hotbar = add(new BooleanSetting("Hotbar", false));
+    public final BooleanSetting notifications = add(new BooleanSetting("Notifications", true));
 
     public Interface() {
         super("Interface", "Manage HUD elements", Category.MISC);

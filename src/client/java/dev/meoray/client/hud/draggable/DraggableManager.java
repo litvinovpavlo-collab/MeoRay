@@ -14,6 +14,8 @@ import java.util.List;
 @Environment(EnvType.CLIENT)
 public class DraggableManager {
     private final List<HudElement> elements = new ArrayList<>();
+    private int lastScreenW = -1;
+    private int lastScreenH = -1;
 
     public void add(HudElement element) {
         elements.add(element);
@@ -32,6 +34,21 @@ public class DraggableManager {
     }
 
     public void updatePositions(float mouseX, float mouseY) {
+        MinecraftClient mc = MinecraftClient.getInstance();
+        int screenW = mc.getWindow().getScaledWidth();
+        int screenH = mc.getWindow().getScaledHeight();
+
+        // Clamp all on resize
+        if (screenW != lastScreenW || screenH != lastScreenH) {
+            lastScreenW = screenW;
+            lastScreenH = screenH;
+            for (HudElement el : elements) {
+                Draggable d = el.getDraggable();
+                if (d == null) continue;
+                clampElement(d, screenW, screenH);
+            }
+        }
+
         for (HudElement el : elements) {
             Draggable d = el.getDraggable();
             if (d == null) continue;
@@ -40,11 +57,18 @@ public class DraggableManager {
             if (d.isDragging()) {
                 float newX = mouseX - d.getOffsetX();
                 float newY = mouseY - d.getOffsetY();
-                // No strict bounds check; Draggable allows free movement within screen
                 d.setX(newX);
                 d.setY(newY);
+                clampElement(d, screenW, screenH);
             }
         }
+    }
+
+    private void clampElement(Draggable d, int screenW, int screenH) {
+        float w = Math.max(d.getWidth(), 10f);
+        float h = Math.max(d.getHeight(), 10f);
+        d.setX(Math.max(0, Math.min(screenW - w, d.getX())));
+        d.setY(Math.max(0, Math.min(screenH - h, d.getY())));
     }
 
     public void handleClick(int button, double mouseX, double mouseY) {

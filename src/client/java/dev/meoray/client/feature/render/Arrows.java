@@ -1,5 +1,6 @@
 package dev.meoray.client.feature.render;
 
+import com.mojang.blaze3d.systems.RenderSystem;
 import dev.meoray.client.MeoRayClient;
 import dev.meoray.client.core.Category;
 import dev.meoray.client.core.Module;
@@ -14,6 +15,7 @@ import dev.meoray.client.util.render.builders.states.SizeState;
 import dev.meoray.client.util.render.msdf.MsdfFont;
 import dev.meoray.client.util.render.renderers.impl.BuiltRectangle;
 import dev.meoray.client.util.render.renderers.impl.BuiltText;
+import dev.meoray.client.util.render.renderers.impl.BuiltTexture;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.render.Camera;
@@ -22,20 +24,21 @@ import net.minecraft.entity.LivingEntity;
 import net.minecraft.entity.mob.HostileEntity;
 import net.minecraft.entity.passive.AnimalEntity;
 import net.minecraft.entity.player.PlayerEntity;
+import net.minecraft.util.Identifier;
 import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Vec3d;
 import org.joml.Matrix4f;
 
 public class Arrows extends Module {
 
-    // === SECTION: APPEARANCE ===
+    private static final Identifier ARROW_TEX = Identifier.of("meoray", "textures/gui/arrow.png");
+
     public final SectionSetting appearanceSection = add(new SectionSetting("Appearance"));
     public final NumberSetting size = appearanceSection.add(new NumberSetting("Size", 16.0, 6.0, 36.0, 1.0));
     public final NumberSetting radius = appearanceSection.add(new NumberSetting("Radius", 110.0, 40.0, 250.0, 5.0));
     public final NumberSetting maxDistance = appearanceSection.add(new NumberSetting("Max Distance", 100.0, 10.0, 500.0, 5.0));
     public final BooleanSetting showDistance = appearanceSection.add(new BooleanSetting("Show Distance", true));
 
-    // === SECTION: TARGETS ===
     public final SectionSetting targetsSection = add(new SectionSetting("Targets"));
     public final BooleanSetting tPlayers = targetsSection.add(new BooleanSetting("Players", true));
     public final BooleanSetting tHostile = targetsSection.add(new BooleanSetting("Hostile Mobs", true));
@@ -49,7 +52,7 @@ public class Arrows extends Module {
     private static final int COLOR_ANIMAL = 0xFF99DDFF;
 
     public Arrows() {
-        super("Arrows", "Цветные стрелки указывают на сущности", Category.RENDER);
+        super("Arrows", "PNG-стрелки указывают на сущностей", Category.RENDER);
     }
 
     public void render(DrawContext ctx) {
@@ -119,11 +122,21 @@ public class Arrows extends Module {
             else if (isHostile) col = COLOR_HOSTILE;
             else col = COLOR_ANIMAL;
 
+            // Set texture right before rendering each arrow to prevent texture state corruption
+            RenderSystem.setShaderTexture(0, ARROW_TEX);
+
             ctx.getMatrices().push();
             ctx.getMatrices().translate(ax, ay, 0);
             ctx.getMatrices().multiply(new org.joml.Quaternionf().rotateZ(relRad));
             Matrix4f local = ctx.getMatrices().peek().getPositionMatrix();
-            drawArrow(local, arrowSize, col);
+
+            float hs = arrowSize / 2f;
+            ((BuiltTexture) Builder.texture()
+                .size(new SizeState(arrowSize, arrowSize))
+                .radius(new QuadRadiusState(0f))
+                .color(new QuadColorState(col))
+                .build()).render(local, -hs, -hs, 0);
+
             ctx.getMatrices().pop();
 
             if (showDist) {
@@ -142,34 +155,6 @@ public class Arrows extends Module {
                     .color(col).size(ts).thickness(0.04F).build())
                     .render(matrix, tx, ty);
             }
-        }
-    }
-
-    private void drawArrow(Matrix4f local, float arrowSize, int col) {
-        float width = arrowSize * 0.85f;
-        float height = arrowSize * 0.95f;
-        int shadow = 0x90000000;
-        drawFilledTriangle(local, width + 2f, height + 2f, shadow);
-        drawFilledTriangle(local, width, height, col);
-    }
-
-    private void drawFilledTriangle(Matrix4f local, float width, float height, int col) {
-        int slices = Math.max(16, (int) (height * 2.5f));
-        float sliceH = height / slices;
-        float topY = -height / 2f;
-        float halfW = width / 2f;
-        for (int i = 0; i < slices; i++) {
-            float t = (i + 0.5f) / slices;
-            float currentHalfW = halfW * t;
-            float y = topY + i * sliceH;
-            float x = -currentHalfW;
-            float w = currentHalfW * 2f;
-            ((BuiltRectangle) Builder.rectangle()
-                .size(new SizeState(w, sliceH + 0.6f))
-                .color(new QuadColorState(col))
-                .radius(new QuadRadiusState(0.0))
-                .smoothness(1.0F)
-                .build()).render(local, x, y);
         }
     }
 }

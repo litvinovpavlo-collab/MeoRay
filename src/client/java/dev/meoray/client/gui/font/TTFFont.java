@@ -62,7 +62,8 @@ public class TTFFont {
                 new SizeState(g.width, g.height),
                 new QuadRadiusState(0, 0, 0, 0),
                 new QuadColorState(color),
-                1.0f
+                1.0f,
+                0.0f, 0.0f, 0.0f, 0.0f, 0
             ).render(matrix, curX, y, 0);
 
             curX += g.advance;

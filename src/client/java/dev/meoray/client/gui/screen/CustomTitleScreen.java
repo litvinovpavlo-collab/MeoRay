@@ -1,8 +1,7 @@
 package dev.meoray.client.gui.screen;
 
 import com.mojang.blaze3d.systems.RenderSystem;
-import dev.meoray.client.account.AccountManager;
-import dev.meoray.client.account.MeoRayAccount;
+import dev.meoray.client.account.altmanager.AltManagerScreen;
 import dev.meoray.client.managers.FontManager;
 import dev.meoray.client.util.render.builders.Builder;
 import dev.meoray.client.util.render.builders.states.QuadColorState;
@@ -32,9 +31,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
-import java.util.List;
-import java.util.Locale;
-import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ThreadLocalRandom;
 import net.fabricmc.loader.api.FabricLoader;
 
@@ -53,10 +49,6 @@ public class CustomTitleScreen extends Screen {
     private final MsdfFont sfFont;
 
     private ButtonDef[] mainButtons;
-    private boolean altMenuOpen;
-
-    private String altInput = "";
-    private float scrollAlt;
 
     // Nickname panel
     private double nickX = 10;
@@ -92,7 +84,7 @@ public class CustomTitleScreen extends Screen {
             new ButtonDef("Options", cX - bw / 2d, startY - 33, bw, bh,
                 () -> client.setScreen(new OptionsScreen(this, client.options))),
             new ButtonDef("Altmanager", cX - bw / 2d, startY - 66, bw, bh,
-                () -> altMenuOpen = true),
+                () -> client.setScreen(new AltManagerScreen(this))),
             new ButtonDef("Multiplayer", cX - bw / 2d, startY - 99, bw, bh,
                 () -> client.setScreen(new MultiplayerScreen(this))),
             new ButtonDef("Singleplayer", cX - bw / 2d, startY - 132, bw, bh,
@@ -152,9 +144,6 @@ public class CustomTitleScreen extends Screen {
             renderButton(ctx, matrix, btn);
         }
 
-        if (altMenuOpen) {
-            renderAltPopup(ctx, matrix, mouseX, mouseY);
-        }
     }
 
     // ──────────────────────────────────────────────
@@ -299,108 +288,12 @@ public class CustomTitleScreen extends Screen {
     }
 
     // ──────────────────────────────────────────────
-    // Alt Manager Popup
-    // ──────────────────────────────────────────────
-
-    private void renderAltPopup(DrawContext ctx, Matrix4f matrix, int mx, int my) {
-        ctx.fill(0, 0, width, height, 0x96000000);
-
-        float wW = 220;
-        float wH = 280;
-        float wX = width / 2f - wW / 2f;
-        float wY = height / 2f - wH / 2f;
-
-        ((BuiltRectangle) Builder.rectangle()
-            .size(new SizeState(wW, wH))
-            .color(new QuadColorState(new Color(20, 20, 30, 200)))
-            .radius(new QuadRadiusState(8f))
-            .smoothness(1.15f)
-            .build()).render(matrix, wX, wY);
-
-        ((BuiltBorder) Builder.border()
-            .size(new SizeState(wW, wH))
-            .color(new QuadColorState(BORDER_COLOR))
-            .radius(new QuadRadiusState(8f))
-            .thickness(0.01f)
-            .smoothness(0.6f, 0.6f)
-            .build()).render(matrix, wX, wY);
-
-        ((BuiltText) Builder.text().font(regularFont).text("Account Manager")
-            .color(TEXT_WHITE).size(8f).thickness(0.05f)
-            .build()).render(matrix, wX + wW / 2f - regularFont.getWidth("Account Manager", 8f) / 2f, wY + 12f);
-
-        String placeholder = altInput.isEmpty() ? "Nickname..." : altInput;
-        int tC = altInput.isEmpty() ? 0xFF787882 : 0xFFFFFFFF;
-        boolean cursor = System.currentTimeMillis() % 1000 > 500;
-
-        ((BuiltRectangle) Builder.rectangle()
-            .size(new SizeState(wW - 50, 22))
-            .color(new QuadColorState(new Color(30, 33, 44, 200)))
-            .radius(new QuadRadiusState(4f))
-            .smoothness(1.15f)
-            .build()).render(matrix, wX + 15, wY + 35);
-
-        ((BuiltText) Builder.text().font(FontManager.SF.get()).text(placeholder + (cursor && !altInput.isEmpty() ? "_" : ""))
-            .color(new Color(tC, true)).size(7f).thickness(0.05f)
-            .build()).render(matrix, wX + 22, wY + 42);
-
-        boolean addH = mx >= wX + wW - 45 && mx <= wX + wW - 15
-            && my >= wY + 35 && my <= wY + 57;
-        int addCol = addH ? 0xFFFF6E14 : 0xFFE65C00;
-
-        ((BuiltRectangle) Builder.rectangle()
-            .size(new SizeState(30, 22))
-            .color(new QuadColorState(new Color(addCol, true)))
-            .radius(new QuadRadiusState(4f))
-            .smoothness(1.15f)
-            .build()).render(matrix, wX + wW - 45, wY + 35);
-
-        ((BuiltText) Builder.text().font(regularFont).text("Add")
-            .color(TEXT_WHITE).size(7f).thickness(0.05f)
-            .build()).render(matrix, wX + wW - 30 - regularFont.getWidth("Add", 7f) / 2f, wY + 42);
-
-        RenderSystem.enableScissor((int) wX, (int) (height - wY - wH + 10), (int) wW, (int) (wH - 75));
-
-        float cY = wY + 70 + scrollAlt;
-        List<MeoRayAccount> alts = AccountManager.getAccounts();
-        for (MeoRayAccount alt : alts) {
-            boolean isCur = client.getSession().getUsername().equals(alt.getUsername());
-            boolean rHov = mx >= wX + 15 && mx <= wX + wW - 15
-                && my >= cY && my <= cY + 24;
-
-            int rCol = isCur ? 0xFFE65C00 : (rHov ? 0xFF282C3A : 0xFF1E212C);
-            ((BuiltRectangle) Builder.rectangle()
-                .size(new SizeState(wW - 30, 24))
-                .color(new QuadColorState(new Color(rCol, true)))
-                .radius(new QuadRadiusState(4f))
-                .smoothness(1.15f)
-                .build()).render(matrix, wX + 15, cY);
-
-            ((BuiltText) Builder.text().font(regularFont).text(alt.getUsername())
-                .color(TEXT_WHITE).size(7f).thickness(0.05f)
-                .build()).render(matrix, wX + 25, cY + 7);
-
-            boolean dH = mx >= wX + wW - 35 && mx <= wX + wW - 19
-                && my >= cY + 4 && my <= cY + 20;
-            ((BuiltText) Builder.text().font(regularFont).text("X")
-                .color(new Color(dH ? 0xFFFF3232 : 0xFFB43232, true)).size(7f).thickness(0.05f)
-                .build()).render(matrix, wX + wW - 25, cY + 7);
-
-            cY += 28;
-        }
-
-        RenderSystem.disableScissor();
-    }
-
-    // ──────────────────────────────────────────────
     // Mouse events
     // ──────────────────────────────────────────────
 
     @Override
     public boolean mouseClicked(double mx, double my, int button) {
         if (button != 0) return super.mouseClicked(mx, my, button);
-
-        if (altMenuOpen) return handleAltClick(mx, my);
 
         if (mx >= nickX && mx <= nickX + nickW && my >= nickY && my <= nickY + nickH) {
             draggingNick = true;
@@ -441,77 +334,16 @@ public class CustomTitleScreen extends Screen {
 
     @Override
     public boolean mouseScrolled(double mx, double my, double horiz, double vert) {
-        if (altMenuOpen) {
-            scrollAlt += (float) vert * 20;
-            return true;
-        }
         return super.mouseScrolled(mx, my, horiz, vert);
-    }
-
-    private boolean handleAltClick(double mx, double my) {
-        float wW = 220;
-        float wH = 280;
-        float wX = width / 2f - wW / 2f;
-        float wY = height / 2f - wH / 2f;
-
-        if (mx < wX || mx > wX + wW || my < wY || my > wY + wH) {
-            altMenuOpen = false;
-            return true;
-        }
-
-        if (mx >= wX + wW - 45 && mx <= wX + wW - 15 && my >= wY + 35 && my <= wY + 57) {
-            if (altInput.length() >= 3) {
-                AccountManager.addAccount(altInput);
-                altInput = "";
-            }
-            return true;
-        }
-
-        float cY = wY + 70 + scrollAlt;
-        MeoRayAccount toRemove = null;
-        for (MeoRayAccount alt : AccountManager.getAccounts()) {
-            if (my >= wY + 65 && my <= wY + wH - 10) {
-                if (mx >= wX + wW - 35 && mx <= wX + wW - 19 && my >= cY + 4 && my <= cY + 20) {
-                    toRemove = alt;
-                } else if (mx >= wX + 15 && mx <= wX + wW - 15 && my >= cY && my <= cY + 24) {
-                    AccountManager.setActiveAccount(alt);
-                }
-            }
-            cY += 28;
-        }
-        if (toRemove != null) {
-            AccountManager.removeAccount(toRemove);
-        }
-        return true;
     }
 
     @Override
     public boolean charTyped(char codePoint, int modifiers) {
-        if (altMenuOpen) {
-            if (regularFont.getWidth(altInput, 7f) < 130) {
-                altInput += codePoint;
-            }
-            return true;
-        }
         return super.charTyped(codePoint, modifiers);
     }
 
     @Override
     public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
-        if (altMenuOpen) {
-            if (keyCode == GLFW.GLFW_KEY_BACKSPACE && !altInput.isEmpty()) {
-                altInput = altInput.substring(0, altInput.length() - 1);
-            } else if (keyCode == GLFW.GLFW_KEY_ENTER) {
-                if (altInput.length() >= 3) {
-                    AccountManager.addAccount(altInput);
-                    AccountManager.save();
-                    altInput = "";
-                }
-            } else if (keyCode == GLFW.GLFW_KEY_ESCAPE) {
-                altMenuOpen = false;
-            }
-            return true;
-        }
         if (keyCode == GLFW.GLFW_KEY_ESCAPE) {
             return true;
         }
