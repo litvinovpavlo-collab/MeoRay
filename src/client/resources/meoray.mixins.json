@@ -32,7 +32,16 @@
     "ToastManagerMixin",
     "HeldItemRendererMixin",
     "ClickFriendMixin",
-    "InGameHudHotbarMixin"
+    "InGameHudHotbarMixin",
+    "BlockMixin",
+    "AbstractClientPlayerEntityMixin",
+    "CameraMixin",
+    "ClientPlayerEntityMixin",
+    "GameRendererMixin",
+    "InGameHudMixin",
+    "InGameHudClipMixin",
+    "GameRendererAspectMixin",
+    "GameRendererFOVMixin"
   ],
   "injectors": {
     "defaultRequire": 1

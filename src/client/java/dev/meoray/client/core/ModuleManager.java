@@ -22,10 +22,12 @@ public class ModuleManager {
         register(new Flight());
         register(new Sprint());
         register(new NoSlow());
+        register(new FreeCam());
         register(new NoFall());
         register(new ESP());
         register(new ChinaHat());
         register(new JumpCircles());
+        register(new ItemESP());
         register(new NoRender());
         register(new BetterWorld());
         register(new Particles());
@@ -35,6 +37,11 @@ public class ModuleManager {
         register(new ClickFriend());
         register(new FakePlayer());
         register(new Arrows());
+        register(new XRay());
+        register(new ChestESP());
+        register(new TargetESP());
+        register(new ProjectileTrails());
+        register(new AspectRatio());
     }
 
     private void register(Module m) {
@@ -54,6 +61,14 @@ public class ModuleManager {
     public Module getByName(String name) {
         return modules.stream()
                 .filter(m -> m.getName().equals(name))
+                .findFirst()
+                .orElse(null);
+    }
+
+    @SuppressWarnings("unchecked")
+    public <T extends Module> T getModule(Class<T> clazz) {
+        return (T) modules.stream()
+                .filter(m -> m.getClass() == clazz)
                 .findFirst()
                 .orElse(null);
     }

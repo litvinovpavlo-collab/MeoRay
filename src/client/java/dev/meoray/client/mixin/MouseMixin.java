@@ -1,6 +1,7 @@
 package dev.meoray.client.mixin;
 
 import dev.meoray.client.MeoRayClient;
+import dev.meoray.client.feature.render.FreeCam;
 import dev.meoray.client.gui.screen.MeoRayClickGUI;
 import dev.meoray.client.hud.draggable.DraggableManager;
 import net.minecraft.client.MinecraftClient;
@@ -28,6 +29,18 @@ public class MouseMixin {
         }
         if (action == 0 && editable) {
             mgr.endDrag();
+        }
+    }
+
+    @Inject(method = "onMouseScroll", at = @At("HEAD"), cancellable = true)
+    private void meoray$freecamScroll(long window, double horizontal, double vertical,
+                                       CallbackInfo ci) {
+        FreeCam fc = FreeCam.INSTANCE;
+        if (fc == null || !fc.isEnabled()) return;
+
+        if (fc.scrollSpeed.getValue()) {
+            fc.onMouseScroll(vertical);
+            ci.cancel();
         }
     }
 }

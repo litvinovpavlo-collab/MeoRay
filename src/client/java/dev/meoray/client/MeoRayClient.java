@@ -11,7 +11,9 @@ import dev.meoray.client.gui.theme.ThemeManager;
 import dev.meoray.client.util.other.NameGen;
 import dev.meoray.client.hud.CoordsHUD;
 import dev.meoray.client.hud.HudElement;
+import dev.meoray.client.hud.ArmorHUD;
 import dev.meoray.client.hud.InfoHUD;
+import dev.meoray.client.hud.KeyBindHUD;
 import dev.meoray.client.hud.InventoryHUD;
 import dev.meoray.client.hud.KeyListHUD;
 import dev.meoray.client.hud.PotionsHUD;
@@ -19,6 +21,7 @@ import dev.meoray.client.hud.TargetHUD;
 import dev.meoray.client.hud.draggable.DraggableManager;
 import dev.meoray.client.util.MeoRayRPC;
 import dev.meoray.client.util.MeoRayRPCUpdater;
+import dev.meoray.client.util.cape.CapeGenerator;
 import dev.meoray.client.util.WindowTitleAnimator;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
@@ -29,6 +32,7 @@ import dev.meoray.client.core.Module;
 import dev.meoray.client.feature.render.ESP;
 import dev.meoray.client.feature.render.HitEffect;
 import dev.meoray.client.feature.render.JumpCircles;
+import dev.meoray.client.feature.render.ItemESP;
 import net.minecraft.client.option.KeyBinding;
 import net.minecraft.client.util.InputUtil;
 import org.lwjgl.glfw.GLFW;
@@ -54,6 +58,8 @@ public class MeoRayClient implements ClientModInitializer {
     private final FriendManager friendManager = new FriendManager();
     private final TargetHUD targetHUD = new TargetHUD();
     private final KeyListHUD keyListHUD = new KeyListHUD();
+    private final ArmorHUD armorHUD = new ArmorHUD();
+    private final KeyBindHUD keyBindHUD = new KeyBindHUD();
     private final NickNameManager nickNameManager = new NickNameManager();
     private final NameGen nameGen = new NameGen();
     private AltManagerScreen altManagerScreen;
@@ -78,6 +84,9 @@ public class MeoRayClient implements ClientModInitializer {
         draggableManager.add(inventoryHUD);
         draggableManager.add(targetHUD);
         draggableManager.add(keyListHUD);
+        draggableManager.add(armorHUD);
+        draggableManager.add(keyBindHUD);
+        CapeGenerator.registerCapeTexture();
         MeoRayRPC.start();
 
         configManager = new ConfigManager(moduleManager, draggableManager, themeManager);
@@ -156,6 +165,8 @@ public class MeoRayClient implements ClientModInitializer {
             boolean invOn = false;
             boolean targetOn = false;
             boolean keyListOn = false;
+            boolean armorOn = false;
+            boolean keyBindsOn = false;
             boolean hotbarOn = false;
             boolean notifyOn = false;
 
@@ -168,6 +179,8 @@ public class MeoRayClient implements ClientModInitializer {
                         case "InventoryHUD" -> invOn = (boolean) s.getValue();
                         case "TargetHUD" -> targetOn = (boolean) s.getValue();
                         case "KeyList" -> keyListOn = (boolean) s.getValue();
+                        case "ArmorHUD" -> armorOn = (boolean) s.getValue();
+                        case "KeyBinds" -> keyBindsOn = (boolean) s.getValue();
                         case "Hotbar" -> hotbarOn = (boolean) s.getValue();
                         case "Notifications" -> notifyOn = (boolean) s.getValue();
                     }
@@ -199,6 +212,8 @@ public class MeoRayClient implements ClientModInitializer {
             if (invOn) inventoryHUD.render(context);
             if (targetOn) targetHUD.render(context);
             if (keyListOn) keyListHUD.render(context);
+            if (armorOn) armorHUD.render(context);
+            if (keyBindsOn) keyBindHUD.render(context);
             if (hotbarOn) dev.meoray.client.hud.CustomHotbar.render(context);
 
             Module arrows = moduleManager.getByName("Arrows");
@@ -222,6 +237,24 @@ public class MeoRayClient implements ClientModInitializer {
             }
         });
 
+        HudRenderCallback.EVENT.register((ctx, tickDeltaManager) -> {
+            float tickDelta = tickDeltaManager.getTickDelta(false);
+            Module ie = INSTANCE.moduleManager.getByName("ItemESP");
+            if (ie != null && ie.isEnabled() && ie instanceof ItemESP itemESP) {
+                try { ctx.draw(); itemESP.onHudRender(ctx, tickDelta); ctx.draw(); } catch (Throwable ignored) {}
+            }
+
+            Module xr = INSTANCE.moduleManager.getByName("XRay");
+            if (xr != null && xr.isEnabled() && xr instanceof dev.meoray.client.feature.render.XRay xRay) {
+                try { ctx.draw(); xRay.onHudRender(ctx, tickDelta); ctx.draw(); } catch (Throwable ignored) {}
+            }
+
+            Module ce = INSTANCE.moduleManager.getByName("ChestESP");
+            if (ce != null && ce.isEnabled() && ce instanceof dev.meoray.client.feature.render.ChestESP chestESP) {
+                try { ctx.draw(); chestESP.onHudRender(ctx, tickDelta); ctx.draw(); } catch (Throwable ignored) {}
+            }
+        });
+
         WorldRenderEvents.AFTER_TRANSLUCENT.register(context -> {
             Module esp = INSTANCE.moduleManager.getByName("ESP");
             if (esp != null && esp.isEnabled() && esp instanceof ESP espModule) {
@@ -242,9 +275,34 @@ public class MeoRayClient implements ClientModInitializer {
                 jumpCircles.onWorldRender(context.matrixStack(), context.tickCounter().getTickDelta(false));
             }
 
+            Module ie = INSTANCE.moduleManager.getByName("ItemESP");
+            if (ie != null && ie.isEnabled() && ie instanceof ItemESP itemESP) {
+                itemESP.onWorldRender(context.matrixStack(), context.tickCounter().getTickDelta(false));
+            }
+
+            Module xr = INSTANCE.moduleManager.getByName("XRay");
+            if (xr != null && xr.isEnabled() && xr instanceof dev.meoray.client.feature.render.XRay xRay) {
+                xRay.onWorldRender(context.matrixStack(), context.tickCounter().getTickDelta(false));
+            }
+
             Module aa = INSTANCE.moduleManager.getByName("AttackAura");
             if (aa != null && aa.isEnabled() && aa instanceof dev.meoray.client.feature.combat.AttackAura aura) {
                 aura.onWorldRender(context.matrixStack(), context.tickCounter().getTickDelta(false));
+            }
+
+            Module ce = INSTANCE.moduleManager.getByName("ChestESP");
+            if (ce != null && ce.isEnabled() && ce instanceof dev.meoray.client.feature.render.ChestESP chestESP) {
+                chestESP.onWorldRender(context.matrixStack(), context.tickCounter().getTickDelta(false));
+            }
+
+            Module te = INSTANCE.moduleManager.getByName("TargetESP");
+            if (te != null && te.isEnabled() && te instanceof dev.meoray.client.feature.render.TargetESP targetESP) {
+                targetESP.onWorldRender(context.matrixStack(), context.tickCounter().getTickDelta(false));
+            }
+
+            Module pt = INSTANCE.moduleManager.getByName("ProjectileTrails");
+            if (pt != null && pt.isEnabled() && pt instanceof dev.meoray.client.feature.render.ProjectileTrails projectileTrails) {
+                projectileTrails.onWorldRender(context.matrixStack(), context.tickCounter().getTickDelta(false));
             }
         });
 

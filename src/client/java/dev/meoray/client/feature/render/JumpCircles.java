@@ -37,7 +37,7 @@ public class JumpCircles extends Module {
     // === MODE ===
     public final SectionSetting modeSection = add(new SectionSetting("Mode"));
     public final ModeSetting mode = modeSection.add(new ModeSetting("Mode", "Ritual",
-            "Simple", "Ritual", "Demon Summon", "Pentagram", "Runes"));
+            "Simple", "Ritual", "Demon Summon", "Pentagram", "Runes", "Arcane", "Void"));
 
     // === APPEARANCE ===
     public final SectionSetting appearanceSection = add(new SectionSetting("Appearance"));
@@ -49,6 +49,10 @@ public class JumpCircles extends Module {
     public final NumberSetting rotateSpeed = appearanceSection.add(new NumberSetting("Rotate Speed", 25, 0, 200, 1));
     public final BooleanSetting throughWalls = appearanceSection.add(new BooleanSetting("Through Walls", true));
     public final BooleanSetting pulse = appearanceSection.add(new BooleanSetting("Pulse", true));
+    public final BooleanSetting glow = appearanceSection.add(new BooleanSetting("Glow", true));
+    public final NumberSetting glowIntensity = appearanceSection.add(new NumberSetting("Glow Intensity", 3, 1, 6, 1));
+    public final NumberSetting glowSpread = appearanceSection.add(new NumberSetting("Glow Spread", 2.5, 1.0, 5.0, 0.1));
+    public final BooleanSetting innerGlow = appearanceSection.add(new BooleanSetting("Inner Glow", true));
 
     // === TARGETS ===
     public final SectionSetting targetsSection = add(new SectionSetting("Targets"));
@@ -202,7 +206,11 @@ public class JumpCircles extends Module {
         matrices.translate(x, y, z);
 
         RenderSystem.enableBlend();
-        RenderSystem.defaultBlendFunc();
+        // АДДИТИВНЫЙ блендинг = свечение
+        RenderSystem.blendFunc(
+            com.mojang.blaze3d.platform.GlStateManager.SrcFactor.SRC_ALPHA,
+            com.mojang.blaze3d.platform.GlStateManager.DstFactor.ONE
+        );
         RenderSystem.disableCull();
         if (throughWalls.getValue()) RenderSystem.disableDepthTest();
         RenderSystem.depthMask(false);
@@ -229,6 +237,8 @@ public class JumpCircles extends Module {
             case "Demon Summon" -> drawDemonSummon(mat, r, seg, alpha);
             case "Pentagram" -> drawPentagram(mat, r, seg, alpha);
             case "Runes" -> drawRunes(mat, r, seg, alpha);
+            case "Arcane" -> drawArcane(mat, r, seg, alpha);
+            case "Void" -> drawVoid(mat, r, seg, alpha);
         }
 
         matrices.pop();
@@ -240,189 +250,451 @@ public class JumpCircles extends Module {
         RenderSystem.depthMask(true);
         if (throughWalls.getValue()) RenderSystem.enableDepthTest();
         RenderSystem.enableCull();
+        RenderSystem.defaultBlendFunc(); // вернуть стандартный
         RenderSystem.disableBlend();
 
         matrices.pop();
     }
 
-    // ========== SIMPLE ==========
+    // ========== SIMPLE (улучшенный) ==========
     private void drawSimple(Matrix4f mat, float r, int seg, float alpha) {
-        drawRing(mat, r, seg, getColor(primaryColor.getValue(), alpha));
+        int c1 = getColor(primaryColor.getValue(), alpha);
+        int c2 = getColor(secondaryColor.getValue(), alpha);
+
+        // Главное толстое кольцо
+        drawRing(mat, r, seg, c1);
+        // Внутреннее тонкое
+        drawRing(mat, r * 0.92f, seg, withAlpha(c1, alpha * 0.5f));
+        // Прерывистое наружное
+        drawDashedRing(mat, r * 1.08f, seg, c2, 8);
+        // Маленькие точки-узелки
+        int knots = 12;
+        for (int i = 0; i < knots; i++) {
+            float a = (float)(Math.PI * 2 * i / knots);
+            float cx = (float)Math.cos(a) * r;
+            float cz = (float)Math.sin(a) * r;
+            drawSmallCircle(mat, cx, cz, r * 0.04f, 12, c2);
+        }
     }
 
-    // ========== RITUAL ==========
+    // ========== RITUAL (улучшенный) ==========
     private void drawRitual(Matrix4f mat, float r, int seg, float alpha) {
         int c1 = getColor(primaryColor.getValue(), alpha);
         int c2 = getColor(secondaryColor.getValue(), alpha);
         int c3 = getColor(accentColor.getValue(), alpha);
 
-        // Внешнее кольцо
-        drawRing(mat, r, seg, c1);
-        // Среднее кольцо
-        drawRing(mat, r * 0.85f, seg, c2);
-        // Внутреннее
-        drawRing(mat, r * 0.4f, seg, c3);
+        // Большой заполненный градиент в центре
+        drawFilledCircle(mat, r * 0.95f, seg, withAlpha(c1, alpha * 0.08f));
 
-        // Соединительные линии (как спицы)
+        // Внешнее двойное кольцо
+        drawRing(mat, r, seg, c1);
+        drawRing(mat, r * 0.97f, seg, withAlpha(c1, alpha * 0.4f));
+
+        // Среднее с обратным вращением (визуально)
+        drawDashedRing(mat, r * 0.85f, seg, c2, 16);
+        drawRing(mat, r * 0.82f, seg, withAlpha(c2, alpha * 0.6f));
+
+        // Спицы (8 штук)
         drawSpokes(mat, r * 0.4f, r * 0.85f, 8, c2);
 
-        // Маленькие круги по периметру
+        // Между спицами - короткие линии
+        drawOffsetSpokes(mat, r * 0.5f, r * 0.7f, 8, withAlpha(c3, alpha * 0.7f), (float)(Math.PI / 8));
+
+        // Маленькие круги по периметру (с точками внутри)
         int smallCircles = 6;
         for (int i = 0; i < smallCircles; i++) {
             float a = (float)(Math.PI * 2 * i / smallCircles);
             float cx = (float)Math.cos(a) * r * 0.7f;
             float cz = (float)Math.sin(a) * r * 0.7f;
             drawSmallCircle(mat, cx, cz, r * 0.1f, 16, c3);
+            drawFilledCircle(mat, cx, cz, r * 0.04f, 12, c3);
         }
 
         // Внутренний треугольник
         drawPolygon(mat, r * 0.35f, 3, c1);
+        // Перевёрнутый треугольник (звезда Давида)
+        drawPolygonRotated(mat, r * 0.35f, 3, c2, (float)Math.PI);
+
+        // Центральная точка
+        drawFilledCircle(mat, r * 0.06f, 12, c3);
+        drawRing(mat, r * 0.1f, 24, c3);
     }
 
-    // ========== DEMON SUMMON ==========
+    // ========== DEMON SUMMON (намного эпичнее) ==========
     private void drawDemonSummon(Matrix4f mat, float r, int seg, float alpha) {
         int c1 = getColor(primaryColor.getValue(), alpha);
         int c2 = getColor(secondaryColor.getValue(), alpha);
         int c3 = getColor(accentColor.getValue(), alpha);
 
-        // Заполненный круг (полупрозрачный)
-        drawFilledCircle(mat, r, seg, withAlpha(c1, alpha * 0.15f));
+        // Тёмная "лужа" в основе
+        drawFilledCircle(mat, r, seg, withAlpha(c1, alpha * 0.18f));
+        drawFilledCircle(mat, r * 0.7f, seg, withAlpha(c1, alpha * 0.15f));
 
-        // Внешнее двойное кольцо
+        // Внешнее тройное кольцо
+        drawRing(mat, r * 1.05f, seg, withAlpha(c1, alpha * 0.4f));
         drawRing(mat, r, seg, c1);
         drawRing(mat, r * 0.95f, seg, c1);
 
+        // Прерывистое кольцо между
+        drawDashedRing(mat, r * 0.88f, seg, c3, 24);
+
         // Пентаграмма внутри
         drawPentagramShape(mat, r * 0.75f, c2);
+        drawPentagramShape(mat, r * 0.73f, withAlpha(c2, alpha * 0.5f)); // двойная для "толщины"
 
-        // Внутренний круг вокруг пентаграммы
+        // Кольцо вокруг пентаграммы
         drawRing(mat, r * 0.75f, seg, c2);
+        drawRing(mat, r * 0.78f, seg, withAlpha(c2, alpha * 0.5f));
 
         // Центральный круг
+        drawFilledCircle(mat, r * 0.28f, seg, withAlpha(c3, alpha * 0.4f));
         drawRing(mat, r * 0.25f, seg, c3);
-        drawFilledCircle(mat, r * 0.25f, seg, withAlpha(c3, alpha * 0.3f));
+        drawRing(mat, r * 0.3f, seg, withAlpha(c3, alpha * 0.6f));
 
-        // 6 шипов наружу
+        // Глаз в центре (мини-круг + точка)
+        drawRing(mat, r * 0.12f, 24, c3);
+        drawFilledCircle(mat, r * 0.05f, 12, c3);
+
+        // 6 шипов наружу (длинные, треугольные)
         int spikes = 6;
         for (int i = 0; i < spikes; i++) {
             float a = (float)(Math.PI * 2 * i / spikes);
-            float x1 = (float)Math.cos(a) * r * 0.95f;
-            float z1 = (float)Math.sin(a) * r * 0.95f;
-            float x2 = (float)Math.cos(a) * r * 1.15f;
-            float z2 = (float)Math.sin(a) * r * 1.15f;
-            drawLine(mat, x1, 0, z1, x2, 0, z2, c3);
+            drawSpike(mat, a, r * 1.05f, r * 1.25f, r * 0.04f, c3);
         }
 
-        // Руны по краю
+        // 6 малых шипов между большими
+        for (int i = 0; i < spikes; i++) {
+            float a = (float)(Math.PI * 2 * i / spikes) + (float)(Math.PI / spikes);
+            drawSpike(mat, a, r * 1.05f, r * 1.15f, r * 0.025f, withAlpha(c1, alpha * 0.8f));
+        }
+
+        // Руны по краю (большие)
         int runeCount = 12;
         for (int i = 0; i < runeCount; i++) {
             float a = (float)(Math.PI * 2 * i / runeCount);
             float cx = (float)Math.cos(a) * r * 0.88f;
             float cz = (float)Math.sin(a) * r * 0.88f;
-            drawRuneSymbol(mat, cx, cz, 0.08f, a, c1);
+            drawRuneSymbol(mat, cx, cz, 0.09f, a, c1);
+        }
+
+        // Маленькие точки между рунами
+        for (int i = 0; i < runeCount; i++) {
+            float a = (float)(Math.PI * 2 * i / runeCount) + (float)(Math.PI / runeCount);
+            float cx = (float)Math.cos(a) * r * 0.88f;
+            float cz = (float)Math.sin(a) * r * 0.88f;
+            drawFilledCircle(mat, cx, cz, 0.02f, 8, c3);
         }
     }
 
-    // ========== PENTAGRAM ==========
+    // ========== PENTAGRAM (улучшенный) ==========
     private void drawPentagram(Matrix4f mat, float r, int seg, float alpha) {
         int c1 = getColor(primaryColor.getValue(), alpha);
         int c2 = getColor(secondaryColor.getValue(), alpha);
+        int c3 = getColor(accentColor.getValue(), alpha);
 
+        // Лёгкое свечение
+        drawFilledCircle(mat, r, seg, withAlpha(c1, alpha * 0.1f));
+
+        // Двойное внешнее кольцо
         drawRing(mat, r, seg, c1);
+        drawRing(mat, r * 0.97f, seg, withAlpha(c1, alpha * 0.5f));
+
+        // Пентаграмма (двойная для эффекта толщины)
         drawPentagramShape(mat, r * 0.95f, c2);
+        drawPentagramShape(mat, r * 0.92f, withAlpha(c2, alpha * 0.5f));
+
+        // Точки на углах пентаграммы
+        for (int i = 0; i < 5; i++) {
+            float a = (float)(Math.PI * 2 * i / 5 - Math.PI / 2);
+            float x = (float)Math.cos(a) * r * 0.95f;
+            float z = (float)Math.sin(a) * r * 0.95f;
+            drawFilledCircle(mat, x, z, r * 0.06f, 16, c3);
+            drawRing(mat, r * 0.08f, 16, withAlpha(c3, alpha * 0.7f));
+        }
+
+        // Внутренний 5-угольник (где пересекаются линии)
+        drawPolygon(mat, r * 0.36f, 5, c3);
+
+        // Центральная точка
+        drawFilledCircle(mat, r * 0.05f, 12, c3);
     }
 
-    // ========== RUNES ==========
+    // ========== RUNES (улучшенный) ==========
     private void drawRunes(Matrix4f mat, float r, int seg, float alpha) {
         int c1 = getColor(primaryColor.getValue(), alpha);
         int c2 = getColor(secondaryColor.getValue(), alpha);
         int c3 = getColor(accentColor.getValue(), alpha);
 
+        // Внешнее кольцо двойное
         drawRing(mat, r, seg, c1);
-        drawRing(mat, r * 0.6f, seg, c2);
+        drawRing(mat, r * 0.98f, seg, withAlpha(c1, alpha * 0.5f));
 
-        // Руны между кольцами
+        // Среднее кольцо
+        drawRing(mat, r * 0.6f, seg, c2);
+        drawRing(mat, r * 0.58f, seg, withAlpha(c2, alpha * 0.5f));
+
+        // Прерывистое кольцо между
+        drawDashedRing(mat, r * 0.8f, seg, c3, 20);
+
+        // Большие руны между кольцами (8 шт)
         int runes = 8;
         for (int i = 0; i < runes; i++) {
             float a = (float)(Math.PI * 2 * i / runes);
             float cx = (float)Math.cos(a) * r * 0.8f;
             float cz = (float)Math.sin(a) * r * 0.8f;
-            drawRuneSymbol(mat, cx, cz, 0.12f, a, c3);
+            drawRuneSymbol(mat, cx, cz, 0.13f, a, c3);
         }
 
-        // Центральная звезда (6 лучей)
-        for (int i = 0; i < 6; i++) {
-            float a = (float)(Math.PI * 2 * i / 6);
-            float x = (float)Math.cos(a) * r * 0.55f;
-            float z = (float)Math.sin(a) * r * 0.55f;
-            drawLine(mat, 0, 0, 0, x, 0, z, c2);
+        // Маленькие руны (16 шт, между большими)
+        for (int i = 0; i < 16; i++) {
+            if (i % 2 == 0) continue;
+            float a = (float)(Math.PI * 2 * i / 16);
+            float cx = (float)Math.cos(a) * r * 0.7f;
+            float cz = (float)Math.sin(a) * r * 0.7f;
+            drawRuneSymbol(mat, cx, cz, 0.06f, a, withAlpha(c1, alpha * 0.7f));
         }
+
+        // Центральная гексаграмма (6-лучевая звезда)
+        drawHexagram(mat, r * 0.5f, c2);
+
+        // Внутреннее кольцо
+        drawRing(mat, r * 0.2f, seg, c3);
+        drawFilledCircle(mat, r * 0.2f, seg, withAlpha(c3, alpha * 0.3f));
+
+        // Центральная точка
+        drawFilledCircle(mat, r * 0.06f, 12, c3);
+    }
+
+    // ========== ARCANE (новый - магический) ==========
+    private void drawArcane(Matrix4f mat, float r, int seg, float alpha) {
+        int c1 = getColor(primaryColor.getValue(), alpha);
+        int c2 = getColor(secondaryColor.getValue(), alpha);
+        int c3 = getColor(accentColor.getValue(), alpha);
+
+        // Магическое свечение в центре
+        drawFilledCircle(mat, r * 0.8f, seg, withAlpha(c2, alpha * 0.1f));
+        drawFilledCircle(mat, r * 0.5f, seg, withAlpha(c3, alpha * 0.15f));
+
+        // Основное кольцо
+        drawRing(mat, r, seg, c1);
+
+        // Внутренние концентрические круги (магические уровни)
+        for (int i = 1; i <= 4; i++) {
+            float ratio = 1f - (i * 0.18f);
+            int col = withAlpha(c1, alpha * (1f - i * 0.15f));
+            drawRing(mat, r * ratio, seg, col);
+        }
+
+        // Многоугольники наслаиваются с разными углами
+        drawPolygonRotated(mat, r * 0.9f, 8, c2, 0f);
+        drawPolygonRotated(mat, r * 0.9f, 8, withAlpha(c2, alpha * 0.5f), (float)(Math.PI / 8));
+
+        drawPolygonRotated(mat, r * 0.6f, 6, c3, 0f);
+        drawPolygonRotated(mat, r * 0.6f, 6, withAlpha(c3, alpha * 0.6f), (float)(Math.PI / 6));
+
+        // Лучи света наружу
+        int rays = 16;
+        for (int i = 0; i < rays; i++) {
+            float a = (float)(Math.PI * 2 * i / rays);
+            float len = (i % 2 == 0) ? r * 1.2f : r * 1.1f;
+            float cosA = (float)Math.cos(a);
+            float sinA = (float)Math.sin(a);
+            int col = (i % 2 == 0) ? c1 : withAlpha(c2, alpha * 0.7f);
+            drawLine(mat, cosA * r, 0, sinA * r, cosA * len, 0, sinA * len, col);
+        }
+
+        // Центральная звезда (мини-пентаграмма)
+        drawPentagramShape(mat, r * 0.25f, c3);
+        drawFilledCircle(mat, r * 0.06f, 12, c3);
+    }
+
+    // ========== VOID (новый - тёмный/звёздный) ==========
+    private void drawVoid(Matrix4f mat, float r, int seg, float alpha) {
+        int c1 = getColor(primaryColor.getValue(), alpha);
+        int c2 = getColor(secondaryColor.getValue(), alpha);
+        int c3 = getColor(accentColor.getValue(), alpha);
+
+        // Глубокая "дыра" в центре - градиент
+        drawFilledCircle(mat, r, seg, withAlpha(c1, alpha * 0.05f));
+        drawFilledCircle(mat, r * 0.7f, seg, withAlpha(c1, alpha * 0.15f));
+        drawFilledCircle(mat, r * 0.4f, seg, withAlpha(c1, alpha * 0.3f));
+
+        // 3 концентрических кольца с разной "толщиной"
+        drawRing(mat, r, seg, c1);
+        drawRing(mat, r * 0.99f, seg, withAlpha(c1, alpha * 0.6f));
+
+        drawRing(mat, r * 0.75f, seg, c2);
+        drawRing(mat, r * 0.74f, seg, withAlpha(c2, alpha * 0.5f));
+
+        drawRing(mat, r * 0.5f, seg, c3);
+        drawRing(mat, r * 0.49f, seg, withAlpha(c3, alpha * 0.5f));
+
+        // Хаотичные точки вокруг (звёзды)
+        long seed = 12345L; // фиксированный паттерн
+        java.util.Random rand = new java.util.Random(seed);
+        for (int i = 0; i < 40; i++) {
+            float a = rand.nextFloat() * (float)Math.PI * 2;
+            float dist = r * (0.3f + rand.nextFloat() * 0.8f);
+            float cx = (float)Math.cos(a) * dist;
+            float cz = (float)Math.sin(a) * dist;
+            float starSize = 0.015f + rand.nextFloat() * 0.025f;
+            int starCol = rand.nextBoolean() ? c3 : withAlpha(c2, alpha * 0.8f);
+            drawFilledCircle(mat, cx, cz, starSize, 6, starCol);
+        }
+
+        // Хаотичные линии (трещины пустоты)
+        for (int i = 0; i < 8; i++) {
+            float a1 = (float)(Math.PI * 2 * i / 8);
+            float a2 = a1 + (float)(Math.PI / 6);
+            float r1 = r * 0.4f;
+            float r2 = r * 0.95f;
+            drawLine(mat, (float)Math.cos(a1) * r1, 0, (float)Math.sin(a1) * r1,
+                    (float)Math.cos(a2) * r2, 0, (float)Math.sin(a2) * r2,
+                    withAlpha(c2, alpha * 0.7f));
+        }
+
+        // Гексаграмма в центре
+        drawHexagram(mat, r * 0.3f, c3);
+
+        // Точка-сингулярность
+        drawFilledCircle(mat, r * 0.05f, 16, c3);
+        drawRing(mat, r * 0.08f, 16, withAlpha(c3, alpha * 0.6f));
     }
 
     // ========== HELPERS ==========
 
     private void drawRing(Matrix4f mat, float r, int seg, int col) {
         float[] c = unpack(col);
-        RenderSystem.lineWidth(lineWidth.getValue().floatValue());
-        Tessellator tess = Tessellator.getInstance();
-        BufferBuilder buf = tess.begin(VertexFormat.DrawMode.DEBUG_LINES, VertexFormats.POSITION_COLOR);
-        for (int i = 0; i < seg; i++) {
-            float a1 = (float)(Math.PI * 2 * i / seg);
-            float a2 = (float)(Math.PI * 2 * (i + 1) / seg);
-            buf.vertex(mat, (float)Math.cos(a1) * r, 0f, (float)Math.sin(a1) * r).color(c[0], c[1], c[2], c[3]);
-            buf.vertex(mat, (float)Math.cos(a2) * r, 0f, (float)Math.sin(a2) * r).color(c[0], c[1], c[2], c[3]);
+
+        if (glow.getValue()) {
+            int layers = glowIntensity.getValue().intValue();
+            float spread = glowSpread.getValue().floatValue();
+            float baseWidth = lineWidth.getValue().floatValue();
+
+            // Рисуем от самого толстого и прозрачного к тонкому и яркому
+            for (int layer = layers; layer >= 0; layer--) {
+                float t = (float) layer / layers; // 0..1
+                float width = baseWidth + spread * 2f * t;
+                float a = c[3] * (1f - t * 0.85f); // прозрачнее наружу
+                if (layer == 0) {
+                    a = Math.min(1f, c[3] * 1.5f); // ядро ярче
+                    width = baseWidth * 0.8f;
+                }
+
+                RenderSystem.lineWidth(width);
+                Tessellator tess = Tessellator.getInstance();
+                BufferBuilder buf = tess.begin(VertexFormat.DrawMode.DEBUG_LINES, VertexFormats.POSITION_COLOR);
+                for (int i = 0; i < seg; i++) {
+                    float a1 = (float)(Math.PI * 2 * i / seg);
+                    float a2 = (float)(Math.PI * 2 * (i + 1) / seg);
+                    buf.vertex(mat, (float)Math.cos(a1) * r, 0f, (float)Math.sin(a1) * r).color(c[0], c[1], c[2], a);
+                    buf.vertex(mat, (float)Math.cos(a2) * r, 0f, (float)Math.sin(a2) * r).color(c[0], c[1], c[2], a);
+                }
+                BufferRenderer.drawWithGlobalProgram(buf.end());
+            }
+            RenderSystem.lineWidth(1f);
+        } else {
+            RenderSystem.lineWidth(lineWidth.getValue().floatValue());
+            Tessellator tess = Tessellator.getInstance();
+            BufferBuilder buf = tess.begin(VertexFormat.DrawMode.DEBUG_LINES, VertexFormats.POSITION_COLOR);
+            for (int i = 0; i < seg; i++) {
+                float a1 = (float)(Math.PI * 2 * i / seg);
+                float a2 = (float)(Math.PI * 2 * (i + 1) / seg);
+                buf.vertex(mat, (float)Math.cos(a1) * r, 0f, (float)Math.sin(a1) * r).color(c[0], c[1], c[2], c[3]);
+                buf.vertex(mat, (float)Math.cos(a2) * r, 0f, (float)Math.sin(a2) * r).color(c[0], c[1], c[2], c[3]);
+            }
+            BufferRenderer.drawWithGlobalProgram(buf.end());
+            RenderSystem.lineWidth(1f);
         }
-        BufferRenderer.drawWithGlobalProgram(buf.end());
-        RenderSystem.lineWidth(1f);
     }
 
     private void drawFilledCircle(Matrix4f mat, float r, int seg, int col) {
+        drawFilledCircle(mat, 0f, 0f, r, seg, col);
+    }
+
+    private void drawFilledCircle(Matrix4f mat, float cx, float cz, float r, int seg, int col) {
         float[] c = unpack(col);
-        Tessellator tess = Tessellator.getInstance();
-        BufferBuilder buf = tess.begin(VertexFormat.DrawMode.TRIANGLE_FAN, VertexFormats.POSITION_COLOR);
-        buf.vertex(mat, 0f, 0f, 0f).color(c[0], c[1], c[2], c[3]);
-        for (int i = 0; i <= seg; i++) {
-            float a = (float)(Math.PI * 2 * i / seg);
-            buf.vertex(mat, (float)Math.cos(a) * r, 0f, (float)Math.sin(a) * r).color(c[0], c[1], c[2], c[3] * 0.5f);
+
+        if (innerGlow.getValue()) {
+            // Несколько слоёв заполнения от центра наружу = свечение
+            int glowLayers = 3;
+            for (int g = 0; g < glowLayers; g++) {
+                float layerR = r * (1f - g * 0.2f);
+                float layerA = c[3] * (0.4f + g * 0.3f);
+
+                Tessellator tess = Tessellator.getInstance();
+                BufferBuilder buf = tess.begin(VertexFormat.DrawMode.TRIANGLE_FAN, VertexFormats.POSITION_COLOR);
+                buf.vertex(mat, cx, 0f, cz).color(c[0], c[1], c[2], layerA);
+                for (int i = 0; i <= seg; i++) {
+                    float a = (float)(Math.PI * 2 * i / seg);
+                    buf.vertex(mat, cx + (float)Math.cos(a) * layerR, 0f, cz + (float)Math.sin(a) * layerR)
+                       .color(c[0], c[1], c[2], 0f);
+                }
+                BufferRenderer.drawWithGlobalProgram(buf.end());
+            }
+        } else {
+            Tessellator tess = Tessellator.getInstance();
+            BufferBuilder buf = tess.begin(VertexFormat.DrawMode.TRIANGLE_FAN, VertexFormats.POSITION_COLOR);
+            buf.vertex(mat, cx, 0f, cz).color(c[0], c[1], c[2], c[3]);
+            for (int i = 0; i <= seg; i++) {
+                float a = (float)(Math.PI * 2 * i / seg);
+                buf.vertex(mat, cx + (float)Math.cos(a) * r, 0f, cz + (float)Math.sin(a) * r)
+                   .color(c[0], c[1], c[2], c[3] * 0.3f);
+            }
+            BufferRenderer.drawWithGlobalProgram(buf.end());
         }
-        BufferRenderer.drawWithGlobalProgram(buf.end());
     }
 
     private void drawSmallCircle(Matrix4f mat, float cx, float cz, float r, int seg, int col) {
         float[] c = unpack(col);
-        RenderSystem.lineWidth(lineWidth.getValue().floatValue());
-        Tessellator tess = Tessellator.getInstance();
-        BufferBuilder buf = tess.begin(VertexFormat.DrawMode.DEBUG_LINES, VertexFormats.POSITION_COLOR);
-        for (int i = 0; i < seg; i++) {
-            float a1 = (float)(Math.PI * 2 * i / seg);
-            float a2 = (float)(Math.PI * 2 * (i + 1) / seg);
-            buf.vertex(mat, cx + (float)Math.cos(a1) * r, 0f, cz + (float)Math.sin(a1) * r).color(c[0], c[1], c[2], c[3]);
-            buf.vertex(mat, cx + (float)Math.cos(a2) * r, 0f, cz + (float)Math.sin(a2) * r).color(c[0], c[1], c[2], c[3]);
+
+        if (glow.getValue()) {
+            int layers = glowIntensity.getValue().intValue();
+            float spread = glowSpread.getValue().floatValue();
+            float baseWidth = lineWidth.getValue().floatValue();
+
+            for (int layer = layers; layer >= 0; layer--) {
+                float t = (float) layer / layers;
+                float width = baseWidth + spread * 1.5f * t;
+                float a = c[3] * (1f - t * 0.85f);
+                if (layer == 0) {
+                    a = Math.min(1f, c[3] * 1.5f);
+                    width = baseWidth * 0.8f;
+                }
+
+                RenderSystem.lineWidth(width);
+                Tessellator tess = Tessellator.getInstance();
+                BufferBuilder buf = tess.begin(VertexFormat.DrawMode.DEBUG_LINES, VertexFormats.POSITION_COLOR);
+                for (int i = 0; i < seg; i++) {
+                    float a1 = (float)(Math.PI * 2 * i / seg);
+                    float a2 = (float)(Math.PI * 2 * (i + 1) / seg);
+                    buf.vertex(mat, cx + (float)Math.cos(a1) * r, 0f, cz + (float)Math.sin(a1) * r).color(c[0], c[1], c[2], a);
+                    buf.vertex(mat, cx + (float)Math.cos(a2) * r, 0f, cz + (float)Math.sin(a2) * r).color(c[0], c[1], c[2], a);
+                }
+                BufferRenderer.drawWithGlobalProgram(buf.end());
+            }
+            RenderSystem.lineWidth(1f);
+        } else {
+            RenderSystem.lineWidth(lineWidth.getValue().floatValue());
+            Tessellator tess = Tessellator.getInstance();
+            BufferBuilder buf = tess.begin(VertexFormat.DrawMode.DEBUG_LINES, VertexFormats.POSITION_COLOR);
+            for (int i = 0; i < seg; i++) {
+                float a1 = (float)(Math.PI * 2 * i / seg);
+                float a2 = (float)(Math.PI * 2 * (i + 1) / seg);
+                buf.vertex(mat, cx + (float)Math.cos(a1) * r, 0f, cz + (float)Math.sin(a1) * r).color(c[0], c[1], c[2], c[3]);
+                buf.vertex(mat, cx + (float)Math.cos(a2) * r, 0f, cz + (float)Math.sin(a2) * r).color(c[0], c[1], c[2], c[3]);
+            }
+            BufferRenderer.drawWithGlobalProgram(buf.end());
+            RenderSystem.lineWidth(1f);
         }
-        BufferRenderer.drawWithGlobalProgram(buf.end());
-        RenderSystem.lineWidth(1f);
     }
 
     private void drawPolygon(Matrix4f mat, float r, int sides, int col) {
-        float[] c = unpack(col);
-        RenderSystem.lineWidth(lineWidth.getValue().floatValue());
-        Tessellator tess = Tessellator.getInstance();
-        BufferBuilder buf = tess.begin(VertexFormat.DrawMode.DEBUG_LINES, VertexFormats.POSITION_COLOR);
-        for (int i = 0; i < sides; i++) {
-            float a1 = (float)(Math.PI * 2 * i / sides - Math.PI / 2);
-            float a2 = (float)(Math.PI * 2 * (i + 1) / sides - Math.PI / 2);
-            buf.vertex(mat, (float)Math.cos(a1) * r, 0f, (float)Math.sin(a1) * r).color(c[0], c[1], c[2], c[3]);
-            buf.vertex(mat, (float)Math.cos(a2) * r, 0f, (float)Math.sin(a2) * r).color(c[0], c[1], c[2], c[3]);
-        }
-        BufferRenderer.drawWithGlobalProgram(buf.end());
-        RenderSystem.lineWidth(1f);
+        drawPolygonRotated(mat, r, sides, col, 0f);
     }
 
     private void drawPentagramShape(Matrix4f mat, float r, int col) {
         float[] c = unpack(col);
-        RenderSystem.lineWidth(lineWidth.getValue().floatValue());
-        Tessellator tess = Tessellator.getInstance();
-        BufferBuilder buf = tess.begin(VertexFormat.DrawMode.DEBUG_LINES, VertexFormats.POSITION_COLOR);
 
         float[][] points = new float[5][2];
         for (int i = 0; i < 5; i++) {
@@ -430,17 +702,47 @@ public class JumpCircles extends Module {
             points[i][0] = (float)Math.cos(a) * r;
             points[i][1] = (float)Math.sin(a) * r;
         }
-
-        // Соединяем через одну (0->2->4->1->3->0) - звезда
         int[] order = {0, 2, 4, 1, 3, 0};
-        for (int i = 0; i < 5; i++) {
-            int a = order[i];
-            int b = order[i + 1];
-            buf.vertex(mat, points[a][0], 0f, points[a][1]).color(c[0], c[1], c[2], c[3]);
-            buf.vertex(mat, points[b][0], 0f, points[b][1]).color(c[0], c[1], c[2], c[3]);
+
+        if (glow.getValue()) {
+            int layers = glowIntensity.getValue().intValue();
+            float spread = glowSpread.getValue().floatValue();
+            float baseWidth = lineWidth.getValue().floatValue();
+
+            for (int layer = layers; layer >= 0; layer--) {
+                float t = (float) layer / layers;
+                float width = baseWidth + spread * 2f * t;
+                float a = c[3] * (1f - t * 0.85f);
+                if (layer == 0) {
+                    a = Math.min(1f, c[3] * 1.5f);
+                    width = baseWidth * 0.8f;
+                }
+
+                RenderSystem.lineWidth(width);
+                Tessellator tess = Tessellator.getInstance();
+                BufferBuilder buf = tess.begin(VertexFormat.DrawMode.DEBUG_LINES, VertexFormats.POSITION_COLOR);
+                for (int i = 0; i < 5; i++) {
+                    int p1 = order[i];
+                    int p2 = order[i + 1];
+                    buf.vertex(mat, points[p1][0], 0f, points[p1][1]).color(c[0], c[1], c[2], a);
+                    buf.vertex(mat, points[p2][0], 0f, points[p2][1]).color(c[0], c[1], c[2], a);
+                }
+                BufferRenderer.drawWithGlobalProgram(buf.end());
+            }
+            RenderSystem.lineWidth(1f);
+        } else {
+            RenderSystem.lineWidth(lineWidth.getValue().floatValue());
+            Tessellator tess = Tessellator.getInstance();
+            BufferBuilder buf = tess.begin(VertexFormat.DrawMode.DEBUG_LINES, VertexFormats.POSITION_COLOR);
+            for (int i = 0; i < 5; i++) {
+                int p1 = order[i];
+                int p2 = order[i + 1];
+                buf.vertex(mat, points[p1][0], 0f, points[p1][1]).color(c[0], c[1], c[2], c[3]);
+                buf.vertex(mat, points[p2][0], 0f, points[p2][1]).color(c[0], c[1], c[2], c[3]);
+            }
+            BufferRenderer.drawWithGlobalProgram(buf.end());
+            RenderSystem.lineWidth(1f);
         }
-        BufferRenderer.drawWithGlobalProgram(buf.end());
-        RenderSystem.lineWidth(1f);
     }
 
     private void drawSpokes(Matrix4f mat, float rInner, float rOuter, int count, int col) {
@@ -461,13 +763,38 @@ public class JumpCircles extends Module {
 
     private void drawLine(Matrix4f mat, float x1, float y1, float z1, float x2, float y2, float z2, int col) {
         float[] c = unpack(col);
-        RenderSystem.lineWidth(lineWidth.getValue().floatValue());
-        Tessellator tess = Tessellator.getInstance();
-        BufferBuilder buf = tess.begin(VertexFormat.DrawMode.DEBUG_LINES, VertexFormats.POSITION_COLOR);
-        buf.vertex(mat, x1, y1, z1).color(c[0], c[1], c[2], c[3]);
-        buf.vertex(mat, x2, y2, z2).color(c[0], c[1], c[2], c[3]);
-        BufferRenderer.drawWithGlobalProgram(buf.end());
-        RenderSystem.lineWidth(1f);
+
+        if (glow.getValue()) {
+            int layers = glowIntensity.getValue().intValue();
+            float spread = glowSpread.getValue().floatValue();
+            float baseWidth = lineWidth.getValue().floatValue();
+
+            for (int layer = layers; layer >= 0; layer--) {
+                float t = (float) layer / layers;
+                float width = baseWidth + spread * 2f * t;
+                float a = c[3] * (1f - t * 0.85f);
+                if (layer == 0) {
+                    a = Math.min(1f, c[3] * 1.5f);
+                    width = baseWidth * 0.8f;
+                }
+
+                RenderSystem.lineWidth(width);
+                Tessellator tess = Tessellator.getInstance();
+                BufferBuilder buf = tess.begin(VertexFormat.DrawMode.DEBUG_LINES, VertexFormats.POSITION_COLOR);
+                buf.vertex(mat, x1, y1, z1).color(c[0], c[1], c[2], a);
+                buf.vertex(mat, x2, y2, z2).color(c[0], c[1], c[2], a);
+                BufferRenderer.drawWithGlobalProgram(buf.end());
+            }
+            RenderSystem.lineWidth(1f);
+        } else {
+            RenderSystem.lineWidth(lineWidth.getValue().floatValue());
+            Tessellator tess = Tessellator.getInstance();
+            BufferBuilder buf = tess.begin(VertexFormat.DrawMode.DEBUG_LINES, VertexFormats.POSITION_COLOR);
+            buf.vertex(mat, x1, y1, z1).color(c[0], c[1], c[2], c[3]);
+            buf.vertex(mat, x2, y2, z2).color(c[0], c[1], c[2], c[3]);
+            BufferRenderer.drawWithGlobalProgram(buf.end());
+            RenderSystem.lineWidth(1f);
+        }
     }
 
     // Стилизованная "руна" - крестик с засечками
@@ -492,6 +819,132 @@ public class JumpCircles extends Module {
         buf.vertex(mat, hx1, 0f, hz1).color(c[0], c[1], c[2], c[3]);
         buf.vertex(mat, hx2, 0f, hz2).color(c[0], c[1], c[2], c[3]);
 
+        BufferRenderer.drawWithGlobalProgram(buf.end());
+        RenderSystem.lineWidth(1f);
+    }
+
+    // Прерывистое кольцо (точки)
+    private void drawDashedRing(Matrix4f mat, float r, int seg, int col, int dashes) {
+        float[] c = unpack(col);
+        RenderSystem.lineWidth(lineWidth.getValue().floatValue());
+        Tessellator tess = Tessellator.getInstance();
+        BufferBuilder buf = tess.begin(VertexFormat.DrawMode.DEBUG_LINES, VertexFormats.POSITION_COLOR);
+
+        int segPerDash = Math.max(1, seg / (dashes * 2));
+        for (int d = 0; d < dashes; d++) {
+            int start = d * segPerDash * 2;
+            for (int i = 0; i < segPerDash; i++) {
+                int idx = start + i;
+                if (idx + 1 > seg) break;
+                float a1 = (float)(Math.PI * 2 * idx / seg);
+                float a2 = (float)(Math.PI * 2 * (idx + 1) / seg);
+                buf.vertex(mat, (float)Math.cos(a1) * r, 0f, (float)Math.sin(a1) * r).color(c[0], c[1], c[2], c[3]);
+                buf.vertex(mat, (float)Math.cos(a2) * r, 0f, (float)Math.sin(a2) * r).color(c[0], c[1], c[2], c[3]);
+            }
+        }
+        BufferRenderer.drawWithGlobalProgram(buf.end());
+        RenderSystem.lineWidth(1f);
+    }
+
+    // Спицы со смещением по углу
+    private void drawOffsetSpokes(Matrix4f mat, float rInner, float rOuter, int count, int col, float offset) {
+        float[] c = unpack(col);
+        RenderSystem.lineWidth(lineWidth.getValue().floatValue());
+        Tessellator tess = Tessellator.getInstance();
+        BufferBuilder buf = tess.begin(VertexFormat.DrawMode.DEBUG_LINES, VertexFormats.POSITION_COLOR);
+        for (int i = 0; i < count; i++) {
+            float a = (float)(Math.PI * 2 * i / count) + offset;
+            float cosA = (float)Math.cos(a);
+            float sinA = (float)Math.sin(a);
+            buf.vertex(mat, cosA * rInner, 0f, sinA * rInner).color(c[0], c[1], c[2], c[3]);
+            buf.vertex(mat, cosA * rOuter, 0f, sinA * rOuter).color(c[0], c[1], c[2], c[3]);
+        }
+        BufferRenderer.drawWithGlobalProgram(buf.end());
+        RenderSystem.lineWidth(1f);
+    }
+
+    // Многоугольник с поворотом
+    private void drawPolygonRotated(Matrix4f mat, float r, int sides, int col, float rotOffset) {
+        float[] c = unpack(col);
+
+        if (glow.getValue()) {
+            int layers = glowIntensity.getValue().intValue();
+            float spread = glowSpread.getValue().floatValue();
+            float baseWidth = lineWidth.getValue().floatValue();
+
+            for (int layer = layers; layer >= 0; layer--) {
+                float t = (float) layer / layers;
+                float width = baseWidth + spread * 2f * t;
+                float a = c[3] * (1f - t * 0.85f);
+                if (layer == 0) {
+                    a = Math.min(1f, c[3] * 1.5f);
+                    width = baseWidth * 0.8f;
+                }
+
+                RenderSystem.lineWidth(width);
+                Tessellator tess = Tessellator.getInstance();
+                BufferBuilder buf = tess.begin(VertexFormat.DrawMode.DEBUG_LINES, VertexFormats.POSITION_COLOR);
+                for (int i = 0; i < sides; i++) {
+                    float a1 = (float)(Math.PI * 2 * i / sides - Math.PI / 2) + rotOffset;
+                    float a2 = (float)(Math.PI * 2 * (i + 1) / sides - Math.PI / 2) + rotOffset;
+                    buf.vertex(mat, (float)Math.cos(a1) * r, 0f, (float)Math.sin(a1) * r).color(c[0], c[1], c[2], a);
+                    buf.vertex(mat, (float)Math.cos(a2) * r, 0f, (float)Math.sin(a2) * r).color(c[0], c[1], c[2], a);
+                }
+                BufferRenderer.drawWithGlobalProgram(buf.end());
+            }
+            RenderSystem.lineWidth(1f);
+        } else {
+            RenderSystem.lineWidth(lineWidth.getValue().floatValue());
+            Tessellator tess = Tessellator.getInstance();
+            BufferBuilder buf = tess.begin(VertexFormat.DrawMode.DEBUG_LINES, VertexFormats.POSITION_COLOR);
+            for (int i = 0; i < sides; i++) {
+                float a1 = (float)(Math.PI * 2 * i / sides - Math.PI / 2) + rotOffset;
+                float a2 = (float)(Math.PI * 2 * (i + 1) / sides - Math.PI / 2) + rotOffset;
+                buf.vertex(mat, (float)Math.cos(a1) * r, 0f, (float)Math.sin(a1) * r).color(c[0], c[1], c[2], c[3]);
+                buf.vertex(mat, (float)Math.cos(a2) * r, 0f, (float)Math.sin(a2) * r).color(c[0], c[1], c[2], c[3]);
+            }
+            BufferRenderer.drawWithGlobalProgram(buf.end());
+            RenderSystem.lineWidth(1f);
+        }
+    }
+
+    // Гексаграмма (звезда Давида)
+    private void drawHexagram(Matrix4f mat, float r, int col) {
+        drawPolygonRotated(mat, r, 3, col, 0f);
+        drawPolygonRotated(mat, r, 3, col, (float)Math.PI);
+    }
+
+    // Шип (треугольный выступ наружу)
+    private void drawSpike(Matrix4f mat, float angle, float rBase, float rTip, float width, int col) {
+        float[] c = unpack(col);
+        float cosA = (float)Math.cos(angle);
+        float sinA = (float)Math.sin(angle);
+        // перпендикуляр
+        float perpX = -sinA;
+        float perpZ = cosA;
+
+        float x1 = cosA * rBase + perpX * width;
+        float z1 = sinA * rBase + perpZ * width;
+        float x2 = cosA * rBase - perpX * width;
+        float z2 = sinA * rBase - perpZ * width;
+        float xTip = cosA * rTip;
+        float zTip = sinA * rTip;
+
+        // Заполненный треугольник
+        Tessellator tess = Tessellator.getInstance();
+        BufferBuilder buf = tess.begin(VertexFormat.DrawMode.TRIANGLES, VertexFormats.POSITION_COLOR);
+        buf.vertex(mat, xTip, 0f, zTip).color(c[0], c[1], c[2], c[3]);
+        buf.vertex(mat, x1, 0f, z1).color(c[0], c[1], c[2], c[3] * 0.4f);
+        buf.vertex(mat, x2, 0f, z2).color(c[0], c[1], c[2], c[3] * 0.4f);
+        BufferRenderer.drawWithGlobalProgram(buf.end());
+
+        // Контур
+        RenderSystem.lineWidth(lineWidth.getValue().floatValue());
+        buf = tess.begin(VertexFormat.DrawMode.DEBUG_LINES, VertexFormats.POSITION_COLOR);
+        buf.vertex(mat, x1, 0f, z1).color(c[0], c[1], c[2], c[3]);
+        buf.vertex(mat, xTip, 0f, zTip).color(c[0], c[1], c[2], c[3]);
+        buf.vertex(mat, x2, 0f, z2).color(c[0], c[1], c[2], c[3]);
+        buf.vertex(mat, xTip, 0f, zTip).color(c[0], c[1], c[2], c[3]);
         BufferRenderer.drawWithGlobalProgram(buf.end());
         RenderSystem.lineWidth(1f);
     }
